@@ -1,29 +1,54 @@
 import bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../../../config/database';
-import type { User, CreateUserInput, UpdateUserInput, RoleOption } from '../../../types';
+import type { User, CreateUserInput, UpdateUserInput, RoleOption, DepartmentOption } from '../../../types';
 
 const SALT_ROUNDS = 10;
 
-const PUBLIC_COLS = 'id,name,email,role,department,employee_id,phone,address,created_at,updated_at';
+const USER_SELECT = `
+  SELECT u.id, u.name, u.email, u.role, u.role_id,
+         d.name AS department, u.department_id,
+         u.manager_id, u.created_at, u.updated_at
+  FROM users u
+  LEFT JOIN departments d ON d.department_id = u.department_id
+`;
 
 export const getAllUsers = async (): Promise<User[]> => {
-  const result = await getDb().query(
-    `SELECT ${PUBLIC_COLS} FROM users ORDER BY role, name`,
-  );
+  const result = await getDb().query(`${USER_SELECT} ORDER BY u.role, u.name`);
   return result.rows as User[];
+};
+
+export const getDepartments = async (): Promise<DepartmentOption[]> => {
+  const result = await getDb().query(
+    `SELECT department_id, name FROM departments ORDER BY name`,
+  );
+  return result.rows as DepartmentOption[];
+};
+
+export const getManagers = async (): Promise<Pick<User, 'id' | 'name'>[]> => {
+  const result = await getDb().query(
+    `SELECT id, name FROM users WHERE role = 'manager' ORDER BY name`,
+  );
+  return result.rows as Pick<User, 'id' | 'name'>[];
 };
 
 export const getRoles = async (): Promise<RoleOption[]> => {
   const result = await getDb().query(
-    'SELECT name FROM roles ORDER BY CASE name WHEN \'admin\' THEN 1 WHEN \'manager\' THEN 2 WHEN \'gatekeeper\' THEN 3 WHEN \'employee\' THEN 4 WHEN \'guest\' THEN 5 ELSE 6 END',
+    `SELECT role_id, name FROM roles
+     ORDER BY CASE name
+       WHEN 'admin'      THEN 1
+       WHEN 'manager'    THEN 2
+       WHEN 'gatekeeper' THEN 3
+       WHEN 'employee'   THEN 4
+       WHEN 'guest'      THEN 5
+       ELSE 6
+     END`,
   );
   return result.rows as RoleOption[];
 };
 
 export const getUserById = async (id: string): Promise<User> => {
   const result = await getDb().query(
-    `SELECT ${PUBLIC_COLS} FROM users WHERE id = $1`,
+    `${USER_SELECT} WHERE u.id = $1`,
     [id],
   );
   const row = result.rows[0] as User | undefined;
@@ -33,36 +58,47 @@ export const getUserById = async (id: string): Promise<User> => {
 
 export const createUser = async (input: CreateUserInput): Promise<User> => {
   const pool = getDb();
+
   const existing = await pool.query('SELECT id FROM users WHERE email = $1', [input.email]);
   if (existing.rows[0]) throw new Error('Email already in use');
 
-  const roleExists = await pool.query('SELECT 1 FROM roles WHERE name = $1', [input.role]);
-  if (!roleExists.rows[0]) throw new Error('Invalid role');
+  const roleRow = await pool.query('SELECT role_id FROM roles WHERE name = $1', [input.role]);
+  if (!roleRow.rows[0]) throw new Error('Invalid role');
+  const roleId: number = roleRow.rows[0].role_id;
 
-  const id = uuidv4();
   const hashed = await bcrypt.hash(input.password, SALT_ROUNDS);
 
-  await pool.query(
-    `INSERT INTO users (id, name, email, password, role, department, employee_id, phone, address)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [id, input.name, input.email, hashed, input.role,
-     input.department ?? null, input.employee_id ?? null,
-     input.phone ?? null, input.address ?? null],
+  const inserted = await pool.query(
+    `INSERT INTO users
+       (name, email, password, role, role_id, department_id, manager_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id`,
+    [input.name, input.email, hashed, input.role, roleId,
+     input.department_id ?? null, input.manager_id ?? null],
   );
 
-  return getUserById(id);
+  return getUserById(inserted.rows[0].id);
 };
 
 export const updateUser = async (id: string, input: UpdateUserInput): Promise<User> => {
   const pool = getDb();
   await getUserById(id);
 
+  const extra: Record<string, unknown> = {};
+
   if (input.role) {
-    const roleExists = await pool.query('SELECT 1 FROM roles WHERE name = $1', [input.role]);
-    if (!roleExists.rows[0]) throw new Error('Invalid role');
+    const roleRow = await pool.query('SELECT role_id FROM roles WHERE name = $1', [input.role]);
+    if (!roleRow.rows[0]) throw new Error('Invalid role');
+    extra.role_id = roleRow.rows[0].role_id;
   }
 
-  const entries = Object.entries(input).filter(([, v]) => v !== undefined);
+  if (input.password) {
+    extra.password = await bcrypt.hash(input.password, SALT_ROUNDS);
+  }
+
+  const { password: _pw, ...inputWithoutPassword } = input;
+  const merged = { ...inputWithoutPassword, ...extra };
+  const entries = Object.entries(merged).filter(([, v]) => v !== undefined);
   if (!entries.length) return getUserById(id);
 
   const fields = entries.map(([k], i) => `${k} = $${i + 1}`).join(', ');

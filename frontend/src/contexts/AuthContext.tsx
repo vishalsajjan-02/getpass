@@ -9,9 +9,8 @@ export interface User {
   email: string;
   role: UserRole;
   department?: string;
-  employee_id?: string;
-  phone?: string;
-  address?: string;
+  department_id?: string;
+  manager_id?: string;
 }
 
 interface AuthContextType {
@@ -28,7 +27,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Restore session from stored token on mount
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -94,6 +92,5 @@ export const useAuth = (): AuthContextType => {
   return ctx;
 };
 
-// Alias so existing components still compile without changes
 export const useMockAuth = useAuth;
 export const MockAuthProvider = AuthProvider;

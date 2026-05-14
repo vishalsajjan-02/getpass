@@ -20,6 +20,22 @@ export const getRoles = async (_req: Request, res: Response): Promise<void> => {
   }
 };
 
+export const getDepartments = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    sendSuccess(res, await UserService.getDepartments());
+  } catch (err) {
+    sendError(res, (err as Error).message, 500);
+  }
+};
+
+export const getManagers = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    sendSuccess(res, await UserService.getManagers());
+  } catch (err) {
+    sendError(res, (err as Error).message, 500);
+  }
+};
+
 export const getOne = async (req: Request, res: Response): Promise<void> => {
   try {
     sendSuccess(res, await UserService.getUserById(req.params.id));

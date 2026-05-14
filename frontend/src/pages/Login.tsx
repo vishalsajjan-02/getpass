@@ -51,7 +51,7 @@ const Login = () => {
     
     setIsSubmitting(true);
     console.log('Attempting login with:', email);
-    
+
     try {
       const { error } = await login(email, password);
       
@@ -197,13 +197,13 @@ const Login = () => {
             <CardContent className="space-y-6 relative z-10">
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="space-y-2">
-                  <Label htmlFor="email" className="text-gray-700 font-medium">Email Address</Label>
+                  <Label htmlFor="identifier" className="text-gray-700 font-medium">Email or Username</Label>
                   <Input
-                    id="email"
-                    type="email"
+                    id="identifier"
+                    type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter your email"
+                    placeholder="Enter email or username"
                     required
                     className="h-12 bg-white/70 border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 transition-all duration-200"
                   />

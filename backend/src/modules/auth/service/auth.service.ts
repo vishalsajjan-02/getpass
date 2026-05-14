@@ -4,12 +4,23 @@ import { signToken } from '../../../utils/jwt.utils';
 import { env } from '../../../config/env';
 import type { User, UserWithPassword } from '../../../types';
 
+const USER_SELECT = `
+  SELECT u.id, u.name, u.email, u.role, u.role_id,
+         d.name AS department, u.department_id,
+         u.manager_id, u.created_at, u.updated_at
+  FROM users u
+  LEFT JOIN departments d ON d.department_id = u.department_id
+`;
+
 export const loginWithCredentials = async (
   email: string,
   password: string,
 ): Promise<{ token: string; user: User }> => {
   const pool = getDb();
-  const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+  const result = await pool.query(
+    'SELECT * FROM users WHERE email = $1',
+    [email],
+  );
   const row = result.rows[0] as UserWithPassword | undefined;
 
   if (!row) throw new Error('Invalid email or password');
@@ -28,20 +39,20 @@ export const guestLogin = async (code: string): Promise<{ token: string; user: U
   }
 
   const pool = getDb();
-  const result = await pool.query("SELECT * FROM users WHERE role = 'guest' LIMIT 1");
-  const row = result.rows[0] as UserWithPassword | undefined;
-
+  const result = await pool.query(
+    `${USER_SELECT} WHERE u.role = 'guest' LIMIT 1`,
+  );
+  const row = result.rows[0] as User | undefined;
   if (!row) throw new Error('No guest account configured. Run seed first.');
 
-  const { password: _pw, ...user } = row;
-  const token = signToken({ userId: user.id, email: user.email, role: user.role });
-  return { token, user: user as User };
+  const token = signToken({ userId: row.id, email: row.email, role: row.role });
+  return { token, user: row };
 };
 
 export const getMe = async (userId: string): Promise<User> => {
   const pool = getDb();
   const result = await pool.query(
-    'SELECT id,name,email,role,department,employee_id,phone,address,created_at,updated_at FROM users WHERE id = $1',
+    `${USER_SELECT} WHERE u.id = $1`,
     [userId],
   );
   const row = result.rows[0] as User | undefined;

@@ -11,11 +11,12 @@ export const useCreateUser = () => {
       email: string;
       password: string;
       role: 'admin' | 'manager' | 'gatekeeper' | 'employee' | 'guest';
-      department?: string;
-      employee_id?: string;
+      department_id?: string;
+      manager_id?: string;
     }) => api.post<Profile>('/users', userData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['managers'] });
     },
   });
 };
@@ -28,12 +29,14 @@ export const useUpdateUser = () => {
       id: string;
       name?: string;
       email?: string;
+      password?: string;
       role?: 'admin' | 'manager' | 'gatekeeper' | 'employee' | 'guest';
-      department?: string;
-      employee_id?: string;
+      department_id?: string;
+      manager_id?: string;
     }) => api.put<Profile>(`/users/${id}`, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['managers'] });
     },
   });
 };
@@ -46,8 +49,7 @@ export const useUpdateProfile = () => {
       id: string;
       name?: string;
       email?: string;
-      department?: string;
-      employee_id?: string;
+      department_id?: string;
     }) => api.put<Profile>(`/users/${id}`, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });

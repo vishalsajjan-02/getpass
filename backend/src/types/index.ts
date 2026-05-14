@@ -6,10 +6,10 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  role_id?: string;
   department?: string;
-  employee_id?: string;
-  phone?: string;
-  address?: string;
+  department_id?: string;
+  manager_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -39,6 +39,12 @@ export interface Gatepass {
 
 export interface RoleOption {
   name: UserRole;
+  role_id: string;
+}
+
+export interface DepartmentOption {
+  name: string;
+  department_id: string;
 }
 
 export interface GatepassReason {
@@ -50,7 +56,7 @@ export interface GatepassWithProfile extends Gatepass {
     name: string;
     email: string;
     department?: string;
-    employee_id?: string;
+    manager_id?: string;
   };
 }
 
@@ -81,20 +87,17 @@ export interface CreateUserInput {
   email: string;
   password: string;
   role: UserRole;
-  department?: string;
-  employee_id?: string;
-  phone?: string;
-  address?: string;
+  department_id?: string;
+  manager_id?: string;
 }
 
 export interface UpdateUserInput {
   name?: string;
   email?: string;
+  password?: string;
   role?: UserRole;
-  department?: string;
-  employee_id?: string;
-  phone?: string;
-  address?: string;
+  department_id?: string;
+  manager_id?: string;
 }
 
 export interface CreateGatepassInput {

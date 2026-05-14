@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../../../config/database';
 import type {
   Gatepass,
@@ -154,18 +153,17 @@ const generateGatepassId = (): string => {
 
 export const createGatepass = async (userId: string, input: CreateGatepassInput): Promise<GatepassWithProfile> => {
   const pool = getDb();
-  const id = uuidv4();
   const gatepassId = generateGatepassId();
   const now = new Date();
   const date = input.date ?? now.toISOString().split('T')[0];
   const outTime = input.out_time ?? now.toTimeString().slice(0, 5);
 
-  await pool.query(
+  const inserted = await pool.query(
     `INSERT INTO gatepasses
-       (id, gatepass_id, user_id, purpose, destination, date, out_time, expected_return_time, is_emergency)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+       (gatepass_id, user_id, purpose, destination, date, out_time, expected_return_time, is_emergency)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id`,
     [
-      id,
       gatepassId,
       userId,
       input.purpose,
@@ -177,7 +175,7 @@ export const createGatepass = async (userId: string, input: CreateGatepassInput)
     ],
   );
 
-  return getGatepassById(id);
+  return getGatepassById(inserted.rows[0].id);
 };
 
 export const updateGatepassStatus = async (

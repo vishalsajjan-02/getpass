@@ -6,10 +6,10 @@ export interface Profile {
   name: string;
   email: string;
   role: 'admin' | 'manager' | 'gatekeeper' | 'employee' | 'guest';
+  role_id?: string;
   department?: string;
-  employee_id?: string;
-  phone?: string;
-  address?: string;
+  department_id?: string;
+  manager_id?: string;
   created_at: string;
   updated_at: string;
 }
