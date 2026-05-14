@@ -1,4 +1,4 @@
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import * as GatepassService from '../service';
 import { sendSuccess, sendError, sendMessage } from '../../../utils/response.utils';
 import type { AuthRequest } from '../../../middleware/auth.middleware';
@@ -39,8 +39,7 @@ export const search = async (req: AuthRequest, res: Response): Promise<void> => 
 export const getStats = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { userId, role } = req.user!;
-    const filterUserId = role === 'employee' || role === 'guest' ? userId : undefined;
-    sendSuccess(res, await GatepassService.getGatepassStats(filterUserId));
+    sendSuccess(res, await GatepassService.getGatepassStats(userId, role));
   } catch (err) {
     sendError(res, (err as Error).message, 500);
   }
@@ -54,9 +53,49 @@ export const getReasons = async (_req: AuthRequest, res: Response): Promise<void
   }
 };
 
-export const getOne = async (req: Request, res: Response): Promise<void> => {
+export const getDailyLunchReport = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    sendSuccess(res, await GatepassService.getGatepassById(req.params.id));
+    const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+    const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : undefined;
+    sendSuccess(res, await GatepassService.getDailyLunchReport(date, employeeId));
+  } catch (err) {
+    sendError(res, (err as Error).message, 500);
+  }
+};
+
+export const getMonthlyLunchReport = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : undefined;
+    sendSuccess(res, await GatepassService.getMonthlyLunchReport(month, employeeId));
+  } catch (err) {
+    sendError(res, (err as Error).message, 500);
+  }
+};
+
+export const getYearlyLunchReport = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const year = typeof req.query.year === 'string' ? req.query.year : undefined;
+    const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : undefined;
+    sendSuccess(res, await GatepassService.getYearlyLunchReport(year, employeeId));
+  } catch (err) {
+    sendError(res, (err as Error).message, 500);
+  }
+};
+
+export const getLiveEmployeeStatuses = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : undefined;
+    sendSuccess(res, await GatepassService.getLiveEmployeeStatuses(employeeId));
+  } catch (err) {
+    sendError(res, (err as Error).message, 500);
+  }
+};
+
+export const getOne = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { userId, role } = req.user!;
+    sendSuccess(res, await GatepassService.getGatepassById(req.params.id, userId, role));
   } catch (err) {
     sendError(res, (err as Error).message, 404);
   }
@@ -65,8 +104,8 @@ export const getOne = async (req: Request, res: Response): Promise<void> => {
 export const create = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const input = req.body as CreateGatepassInput;
-    if (!input.purpose) {
-      sendError(res, 'purpose is required');
+    if (!input.reason_id && !input.reason_name) {
+      sendError(res, 'reason_id is required');
       return;
     }
     const gatepass = await GatepassService.createGatepass(req.user!.userId, input);
@@ -83,18 +122,23 @@ export const updateStatus = async (req: AuthRequest, res: Response): Promise<voi
       sendError(res, 'status is required');
       return;
     }
-    if ((input.status === 'approved' || input.status === 'rejected') && !input.approved_by) {
-      input.approved_by = req.user!.userId;
-    }
-    sendSuccess(res, await GatepassService.updateGatepassStatus(req.params.id, input));
+    sendSuccess(
+      res,
+      await GatepassService.updateGatepassStatus(
+        req.params.id,
+        input,
+        req.user!.userId,
+        req.user!.role,
+      ),
+    );
   } catch (err) {
     sendError(res, (err as Error).message);
   }
 };
 
-export const remove = async (req: Request, res: Response): Promise<void> => {
+export const remove = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    await GatepassService.deleteGatepass(req.params.id);
+    await GatepassService.deleteGatepass(req.params.id, req.user!.userId, req.user!.role);
     sendMessage(res, 'Gatepass deleted successfully');
   } catch (err) {
     sendError(res, (err as Error).message, 404);

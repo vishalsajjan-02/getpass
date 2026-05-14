@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.remove = exports.update = exports.create = exports.getOne = exports.getRoles = exports.getAll = void 0;
+exports.remove = exports.update = exports.create = exports.getOne = exports.getManagers = exports.getDepartments = exports.getRoles = exports.getAll = void 0;
 const UserService = __importStar(require("../service"));
 const response_utils_1 = require("../../../utils/response.utils");
 const getAll = async (_req, res) => {
@@ -54,6 +54,24 @@ const getRoles = async (_req, res) => {
     }
 };
 exports.getRoles = getRoles;
+const getDepartments = async (_req, res) => {
+    try {
+        (0, response_utils_1.sendSuccess)(res, await UserService.getDepartments());
+    }
+    catch (err) {
+        (0, response_utils_1.sendError)(res, err.message, 500);
+    }
+};
+exports.getDepartments = getDepartments;
+const getManagers = async (_req, res) => {
+    try {
+        (0, response_utils_1.sendSuccess)(res, await UserService.getManagers());
+    }
+    catch (err) {
+        (0, response_utils_1.sendError)(res, err.message, 500);
+    }
+};
+exports.getManagers = getManagers;
 const getOne = async (req, res) => {
     try {
         (0, response_utils_1.sendSuccess)(res, await UserService.getUserById(req.params.id));

@@ -18,21 +18,32 @@ interface GatepassRequestFormProps {
 const LUNCH_REASON = 'Lunch';
 
 const GatepassRequestForm: React.FC<GatepassRequestFormProps> = ({ onSubmit, onCancel }) => {
-  const [selectedReason, setSelectedReason] = useState('');
+  const [selectedReasonId, setSelectedReasonId] = useState('');
   const [reasonDescription, setReasonDescription] = useState('');
   const [reasonDescriptionError, setReasonDescriptionError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { data: reasonRows = [] } = useGatepassReasons();
 
-  const defaultReasons = ['Lunch', 'unit 2', 'visit to vendor', 'out'];
-  const reasons = reasonRows.length ? reasonRows.map((reason) => reason.name) : defaultReasons;
-  const shouldShowReasonDescription = !!selectedReason && selectedReason !== LUNCH_REASON;
+  const defaultReasons = [
+    { id: 'lunch', name: 'Lunch' },
+    { id: 'out', name: 'Out' },
+    { id: 'personal-work', name: 'Personal Work' },
+    { id: 'emergency', name: 'Emergency' },
+    { id: 'client-visit', name: 'Client Visit' },
+    { id: 'visit-to-vendor', name: 'Visit to Vendor' },
+    { id: 'unit-2', name: 'Unit 2' },
+    { id: 'other', name: 'Other' },
+  ];
+  const reasons = reasonRows.length ? reasonRows : defaultReasons;
+  const selectedReason = reasons.find((reason) => reason.id === selectedReasonId);
+  const shouldShowReasonDescription = !!selectedReason && selectedReason.name !== LUNCH_REASON;
   const isReasonDescriptionMissing = shouldShowReasonDescription && !reasonDescription.trim();
 
   const handleReasonChange = (value: string) => {
-    setSelectedReason(value);
+    const nextReason = reasons.find((reason) => reason.id === value);
+    setSelectedReasonId(value);
 
-    if (value === LUNCH_REASON) {
+    if (nextReason?.name === LUNCH_REASON) {
       setReasonDescription('');
       setReasonDescriptionError('');
       return;
@@ -53,7 +64,7 @@ const GatepassRequestForm: React.FC<GatepassRequestFormProps> = ({ onSubmit, onC
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!selectedReason.trim()) {
+    if (!selectedReasonId || !selectedReason) {
       toast({
         title: "Missing Information",
         description: "Please select a purpose",
@@ -67,24 +78,21 @@ const GatepassRequestForm: React.FC<GatepassRequestFormProps> = ({ onSubmit, onC
       return;
     }
 
-    const purpose = shouldShowReasonDescription
-      ? `${selectedReason}: ${reasonDescription.trim()}`
-      : selectedReason.trim();
-
     setIsSubmitting(true);
 
     try {
       const now = new Date();
       const gatepassData = {
-        purpose,
+        reason_id: reasonRows.length ? selectedReasonId : undefined,
+        reason_name: selectedReason?.name,
+        reason_description: shouldShowReasonDescription ? reasonDescription.trim() : undefined,
         date: format(now, 'yyyy-MM-dd'),
-        out_time: format(now, 'HH:mm'),
       };
 
       await onSubmit(gatepassData);
       
       // Reset form
-      setSelectedReason('');
+      setSelectedReasonId('');
       setReasonDescription('');
       setReasonDescriptionError('');
     } catch (error) {
@@ -112,17 +120,16 @@ const GatepassRequestForm: React.FC<GatepassRequestFormProps> = ({ onSubmit, onC
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="purpose">Purpose *</Label>
-              <Select value={selectedReason} onValueChange={handleReasonChange}>
+              <Select value={selectedReasonId} onValueChange={handleReasonChange}>
                 <SelectTrigger id="purpose">
                   <SelectValue placeholder="Select reason" />
                 </SelectTrigger>
                 <SelectContent>
                   {reasons.map((reason) => (
-                    <SelectItem key={reason} value={reason}>
-                      {reason}
+                    <SelectItem key={reason.id} value={reason.id}>
+                      {reason.name}
                     </SelectItem>
                   ))}
-                  <SelectItem value="Other">Other</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -163,7 +170,7 @@ const GatepassRequestForm: React.FC<GatepassRequestFormProps> = ({ onSubmit, onC
               <Button 
                 type="submit" 
                 className="flex-1 bg-green-600 hover:bg-green-700"
-                disabled={isSubmitting || !selectedReason || isReasonDescriptionMissing}
+                disabled={isSubmitting || !selectedReasonId || isReasonDescriptionMissing}
               >
                 {isSubmitting ? 'Submitting...' : 'Submit Request'}
               </Button>

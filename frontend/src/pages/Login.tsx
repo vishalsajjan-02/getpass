@@ -84,6 +84,7 @@ const Login = () => {
 
   const demoCredentials = [
     { email: 'admin@company.com', password: 'Admin@123', role: 'Admin' },
+    { email: 'manager@company.com', password: 'Manager@123', role: 'Manager' },
     { email: 'gatekeeper@company.com', password: 'Gate@123', role: 'Gatekeeper' },
     { email: 'employee@company.com', password: 'Emp@123', role: 'Employee' },
   ];

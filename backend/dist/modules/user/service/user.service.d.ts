@@ -1,5 +1,7 @@
-import type { User, CreateUserInput, UpdateUserInput, RoleOption } from '../../../types';
+import type { User, CreateUserInput, UpdateUserInput, RoleOption, DepartmentOption } from '../../../types';
 export declare const getAllUsers: () => Promise<User[]>;
+export declare const getDepartments: () => Promise<DepartmentOption[]>;
+export declare const getManagers: () => Promise<Pick<User, "id" | "name">[]>;
 export declare const getRoles: () => Promise<RoleOption[]>;
 export declare const getUserById: (id: string) => Promise<User>;
 export declare const createUser: (input: CreateUserInput) => Promise<User>;

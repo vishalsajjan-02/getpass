@@ -9,11 +9,20 @@ interface SeedUser {
   password: string;
   role: 'admin' | 'manager' | 'gatekeeper' | 'employee' | 'guest';
   department_name?: string;
-  manager_id?: string;
+  manager_email?: string;
 }
 
 const seedRoles: SeedUser['role'][] = ['admin', 'manager', 'gatekeeper', 'employee', 'guest'];
-const seedGatepassReasons = ['Lunch', 'unit 2', 'visit to vendor', 'out'];
+const seedGatepassReasons = [
+  'Lunch',
+  'Out',
+  'Personal Work',
+  'Emergency',
+  'Client Visit',
+  'Visit to Vendor',
+  'Unit 2',
+  'Other',
+];
 const seedDepartments = ['Software R&D', 'Hardware R&D', 'Store', 'QA', 'Production'];
 
 const seedUsers: SeedUser[] = [
@@ -44,6 +53,7 @@ const seedUsers: SeedUser[] = [
     password: 'Emp@123',
     role: 'employee',
     department_name: 'Software R&D',
+    manager_email: 'manager@company.com',
   },
   {
     name: 'Jane Guest',
@@ -99,11 +109,35 @@ export const runSeed = async (): Promise<void> => {
       `INSERT INTO users
          (name, email, password, role_id, department_id, manager_id)
        VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (email) DO NOTHING`,
-      [user.name, user.email, hashed, roleId, deptId, user.manager_id ?? null],
+       ON CONFLICT (email) DO UPDATE SET
+         name = EXCLUDED.name,
+         password = EXCLUDED.password,
+         role_id = EXCLUDED.role_id,
+         department_id = EXCLUDED.department_id,
+         updated_at = NOW()`,
+      [user.name, user.email, hashed, roleId, deptId, null],
     );
     console.log(`  ✅ Seeded ${user.role}: ${user.email}  (password: ${user.password})`);
   }
+
+  const userRows = await pool.query(`SELECT id, email FROM users`);
+  const userIdMap: Record<string, string> = {};
+  for (const row of userRows.rows) userIdMap[row.email] = row.id;
+
+  for (const user of seedUsers) {
+    if (!user.manager_email) continue;
+    const managerId = userIdMap[user.manager_email];
+    if (!managerId) throw new Error(`Manager not found for ${user.email}`);
+
+    await pool.query(
+      `UPDATE users
+       SET manager_id = $1,
+           updated_at = NOW()
+       WHERE email = $2`,
+      [managerId, user.email],
+    );
+  }
+  console.log('  ✅ Seeded reporting relationships');
 
   console.log('\n✅ Seeding complete!');
   console.log('Default credentials:');

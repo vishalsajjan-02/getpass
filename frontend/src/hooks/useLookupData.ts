@@ -5,6 +5,11 @@ export interface NamedLookup {
   name: string;
 }
 
+export interface GatepassReasonLookup {
+  id: string;
+  name: string;
+}
+
 export interface RoleLookup {
   role_id: string;
   name: string;
@@ -23,7 +28,7 @@ export interface DepartmentOption {
 export const useGatepassReasons = () => {
   return useQuery({
     queryKey: ['gatepass-reasons'],
-    queryFn: () => api.get<NamedLookup[]>('/gatepasses/reasons'),
+    queryFn: () => api.get<GatepassReasonLookup[]>('/gatepasses/reasons'),
   });
 };
 

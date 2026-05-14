@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.remove = exports.updateStatus = exports.create = exports.getOne = exports.getReasons = exports.getStats = exports.search = exports.getToday = exports.getAll = void 0;
+exports.remove = exports.updateStatus = exports.create = exports.getOne = exports.getLiveEmployeeStatuses = exports.getYearlyLunchReport = exports.getMonthlyLunchReport = exports.getDailyLunchReport = exports.getReasons = exports.getStats = exports.search = exports.getToday = exports.getAll = void 0;
 const GatepassService = __importStar(require("../service"));
 const response_utils_1 = require("../../../utils/response.utils");
 const getAll = async (req, res) => {
@@ -74,8 +74,7 @@ exports.search = search;
 const getStats = async (req, res) => {
     try {
         const { userId, role } = req.user;
-        const filterUserId = role === 'employee' || role === 'guest' ? userId : undefined;
-        (0, response_utils_1.sendSuccess)(res, await GatepassService.getGatepassStats(filterUserId));
+        (0, response_utils_1.sendSuccess)(res, await GatepassService.getGatepassStats(userId, role));
     }
     catch (err) {
         (0, response_utils_1.sendError)(res, err.message, 500);
@@ -91,9 +90,53 @@ const getReasons = async (_req, res) => {
     }
 };
 exports.getReasons = getReasons;
+const getDailyLunchReport = async (req, res) => {
+    try {
+        const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+        const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : undefined;
+        (0, response_utils_1.sendSuccess)(res, await GatepassService.getDailyLunchReport(date, employeeId));
+    }
+    catch (err) {
+        (0, response_utils_1.sendError)(res, err.message, 500);
+    }
+};
+exports.getDailyLunchReport = getDailyLunchReport;
+const getMonthlyLunchReport = async (req, res) => {
+    try {
+        const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+        const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : undefined;
+        (0, response_utils_1.sendSuccess)(res, await GatepassService.getMonthlyLunchReport(month, employeeId));
+    }
+    catch (err) {
+        (0, response_utils_1.sendError)(res, err.message, 500);
+    }
+};
+exports.getMonthlyLunchReport = getMonthlyLunchReport;
+const getYearlyLunchReport = async (req, res) => {
+    try {
+        const year = typeof req.query.year === 'string' ? req.query.year : undefined;
+        const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : undefined;
+        (0, response_utils_1.sendSuccess)(res, await GatepassService.getYearlyLunchReport(year, employeeId));
+    }
+    catch (err) {
+        (0, response_utils_1.sendError)(res, err.message, 500);
+    }
+};
+exports.getYearlyLunchReport = getYearlyLunchReport;
+const getLiveEmployeeStatuses = async (req, res) => {
+    try {
+        const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : undefined;
+        (0, response_utils_1.sendSuccess)(res, await GatepassService.getLiveEmployeeStatuses(employeeId));
+    }
+    catch (err) {
+        (0, response_utils_1.sendError)(res, err.message, 500);
+    }
+};
+exports.getLiveEmployeeStatuses = getLiveEmployeeStatuses;
 const getOne = async (req, res) => {
     try {
-        (0, response_utils_1.sendSuccess)(res, await GatepassService.getGatepassById(req.params.id));
+        const { userId, role } = req.user;
+        (0, response_utils_1.sendSuccess)(res, await GatepassService.getGatepassById(req.params.id, userId, role));
     }
     catch (err) {
         (0, response_utils_1.sendError)(res, err.message, 404);
@@ -103,8 +146,8 @@ exports.getOne = getOne;
 const create = async (req, res) => {
     try {
         const input = req.body;
-        if (!input.purpose) {
-            (0, response_utils_1.sendError)(res, 'purpose is required');
+        if (!input.reason_id && !input.reason_name) {
+            (0, response_utils_1.sendError)(res, 'reason_id is required');
             return;
         }
         const gatepass = await GatepassService.createGatepass(req.user.userId, input);
@@ -122,10 +165,7 @@ const updateStatus = async (req, res) => {
             (0, response_utils_1.sendError)(res, 'status is required');
             return;
         }
-        if ((input.status === 'approved' || input.status === 'rejected') && !input.approved_by) {
-            input.approved_by = req.user.userId;
-        }
-        (0, response_utils_1.sendSuccess)(res, await GatepassService.updateGatepassStatus(req.params.id, input));
+        (0, response_utils_1.sendSuccess)(res, await GatepassService.updateGatepassStatus(req.params.id, input, req.user.userId, req.user.role));
     }
     catch (err) {
         (0, response_utils_1.sendError)(res, err.message);
@@ -134,7 +174,7 @@ const updateStatus = async (req, res) => {
 exports.updateStatus = updateStatus;
 const remove = async (req, res) => {
     try {
-        await GatepassService.deleteGatepass(req.params.id);
+        await GatepassService.deleteGatepass(req.params.id, req.user.userId, req.user.role);
         (0, response_utils_1.sendMessage)(res, 'Gatepass deleted successfully');
     }
     catch (err) {

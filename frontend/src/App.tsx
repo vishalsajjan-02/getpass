@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
+import { SocketProvider } from "./contexts/SocketContext";
 import Login from "./pages/Login";
 import GuestLogin from "./pages/GuestLogin";
 import GuestFormPage from "./pages/GuestFormPage";
@@ -29,48 +30,50 @@ const App: React.FC = () => (
       <Toaster />
       <Sonner />
       <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/guest-login" element={<GuestLogin />} />
-            <Route path="/" element={<Navigate to="/login" replace />} />
-            <Route
-              path="/guest-form"
-              element={
-                <ProtectedRoute allowedRoles={["guest"]}>
-                  <GuestFormPage />
-                </ProtectedRoute>
-              }
-            />
-            {/* Admin dashboard (formerly HR) */}
-            <Route
-              path="/admin-dashboard"
-              element={
-                <ProtectedRoute allowedRoles={["admin", "manager"]}>
-                  <HRDashboard />
-                </ProtectedRoute>
-              }
-            />
-            {/* Gatekeeper dashboard (formerly Security) */}
-            <Route
-              path="/gatekeeper-dashboard"
-              element={
-                <ProtectedRoute allowedRoles={["gatekeeper"]}>
-                  <SecurityDashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/employee-dashboard"
-              element={
-                <ProtectedRoute allowedRoles={["employee"]}>
-                  <EmployeeDashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
+        <SocketProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/guest-login" element={<GuestLogin />} />
+              <Route path="/" element={<Navigate to="/login" replace />} />
+              <Route
+                path="/guest-form"
+                element={
+                  <ProtectedRoute allowedRoles={["guest"]}>
+                    <GuestFormPage />
+                  </ProtectedRoute>
+                }
+              />
+              {/* Admin dashboard (formerly HR) */}
+              <Route
+                path="/admin-dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={["admin", "manager"]}>
+                    <HRDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              {/* Gatekeeper dashboard (formerly Security) */}
+              <Route
+                path="/gatekeeper-dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={["gatekeeper"]}>
+                    <SecurityDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/employee-dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={["employee"]}>
+                    <EmployeeDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </SocketProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>

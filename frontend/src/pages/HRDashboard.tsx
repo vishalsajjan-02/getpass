@@ -1,33 +1,49 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import MetricCard from '../components/MetricCard';
 import GatepassDetailsModal from '../components/GatepassDetailsModal';
+import GatepassRequestForm from '@/components/GatepassRequestForm';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Users, Clock, CheckCircle, UserCheck, Eye, Check, X, BarChart, Search } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { useGatepasses, useUpdateGatepassStatus } from '@/hooks/useGatepasses';
+import { useCreateGatepass, useGatepasses, useUpdateGatepassStatus, type GatepassStatus } from '@/hooks/useGatepasses';
 import { useProfiles, useGatepassStats } from '@/hooks/useProfiles';
 import { useMockAuth } from '@/contexts/MockAuthContext';
 import HRUsersTab, { CreateUserDialogButton } from '@/components/HRUsersTab';
 import HRAnalyticsTab from '@/components/HRAnalyticsTab';
+import { formatGatepassReason, getGatepassStatusLabel, isPendingGatepassStatus } from '@/lib/gatepass';
 
 const HRDashboard = () => {
   const { user } = useMockAuth();
   const [activeTab, setActiveTab] = useState('overview');
+  const [showRequestForm, setShowRequestForm] = useState(false);
   const [selectedGatepass, setSelectedGatepass] = useState(null);
   const [requestSearch, setRequestSearch] = useState('');
-  const [requestStatusFilter, setRequestStatusFilter] = useState<'all' | 'pending' | 'approved'>('all');
+  const [requestStatusFilter, setRequestStatusFilter] = useState<'all' | 'pending' | GatepassStatus>('all');
   const [requestFromDate, setRequestFromDate] = useState('');
   const [requestToDate, setRequestToDate] = useState('');
+  const isManager = user?.role === 'manager';
   
   const { data: gatepasses = [], isLoading: gatepassesLoading } = useGatepasses();
   const { data: stats } = useGatepassStats();
   const updateGatepassMutation = useUpdateGatepassStatus();
+  const createGatepassMutation = useCreateGatepass();
 
-  const menuItems = [
+  useEffect(() => {
+    if (!selectedGatepass) return;
+    const latestGatepass = gatepasses.find((gatepass) => gatepass.id === selectedGatepass.id);
+    if (latestGatepass && latestGatepass !== selectedGatepass) {
+      setSelectedGatepass(latestGatepass);
+    }
+  }, [gatepasses, selectedGatepass]);
+
+  const menuItems = isManager ? [
+    { id: 'overview', label: 'Dashboard', icon: <Users className="w-5 h-5" /> },
+    { id: 'requests', label: 'Requests', icon: <Clock className="w-5 h-5" /> },
+  ] : [
     { id: 'overview', label: 'Dashboard', icon: <Users className="w-5 h-5" /> },
     { id: 'requests', label: 'Requests', icon: <Clock className="w-5 h-5" /> },
     { id: 'users', label: 'Users', icon: <UserCheck className="w-5 h-5" /> },
@@ -39,11 +55,12 @@ const HRDashboard = () => {
       await updateGatepassMutation.mutateAsync({
         id,
         status: 'approved',
-        approved_by: user?.id,
       });
       toast({
-        title: "Gatepass Approved",
-        description: "The gatepass request has been approved successfully",
+        title: isManager ? "Manager Approval Saved" : "Admin Approval Saved",
+        description: isManager
+          ? "The request has moved to admin approval."
+          : "The gatepass request has been approved successfully.",
       });
     } catch (error) {
       toast({
@@ -60,11 +77,10 @@ const HRDashboard = () => {
         id,
         status: 'rejected',
         rejection_reason: reason,
-        approved_by: user?.id,
       });
       toast({
         title: "Gatepass Rejected",
-        description: "The gatepass request has been rejected",
+        description: "The gatepass request has been rejected.",
         variant: "destructive"
       });
     } catch (error) {
@@ -76,31 +92,53 @@ const HRDashboard = () => {
     }
   };
 
+  const handleNewRequest = async (data: {
+    reason_id?: string;
+    reason_name?: string;
+    reason_description?: string;
+    date?: string;
+  }) => {
+    try {
+      await createGatepassMutation.mutateAsync({
+        reason_id: data.reason_id,
+        reason_name: data.reason_name,
+        reason_description: data.reason_description,
+        date: data.date,
+      });
+      setShowRequestForm(false);
+      toast({
+        title: "Request Created",
+        description: "Your gatepass request has been submitted for approval.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create gatepass request.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'approved':
         return <Badge className="bg-gradient-to-r from-green-100 to-green-200 text-green-700 border-green-300">Approved</Badge>;
+      case 'pending_manager_approval':
+        return <Badge className="bg-gradient-to-r from-amber-100 to-amber-200 text-amber-700 border-amber-300">Pending Manager Approval</Badge>;
+      case 'pending_admin_approval':
       case 'pending':
         return <Badge className="bg-gradient-to-r from-orange-100 to-orange-200 text-orange-700 border-orange-300">Pending</Badge>;
       case 'rejected':
         return <Badge className="bg-gradient-to-r from-red-100 to-red-200 text-red-700 border-red-300">Rejected</Badge>;
+      case 'cancelled':
+        return <Badge className="bg-gradient-to-r from-rose-100 to-rose-200 text-rose-700 border-rose-300">Cancelled</Badge>;
       case 'active':
-        return <Badge className="bg-gradient-to-r from-blue-100 to-blue-200 text-blue-700 border-blue-300">Active</Badge>;
+        return <Badge className="bg-gradient-to-r from-blue-100 to-blue-200 text-blue-700 border-blue-300">Out</Badge>;
       case 'completed':
-        return <Badge className="bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 border-gray-300">Completed</Badge>;
+        return <Badge className="bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 border-gray-300">In</Badge>;
       default:
-        return <Badge variant="secondary">{status}</Badge>;
+        return <Badge variant="secondary">{getGatepassStatusLabel(status as any)}</Badge>;
     }
-  };
-
-  const formatRequestTime = (timeString?: string) => {
-    if (!timeString) return null;
-
-    return new Date(`2000-01-01T${timeString}`).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
   };
 
   const formatRequestDateTime = (request: typeof gatepasses[number]) => {
@@ -109,19 +147,21 @@ const HRDashboard = () => {
       month: 'short',
       year: 'numeric',
     });
-    const formattedTime = formatRequestTime(request.out_time);
-
-    return formattedTime ? `${formattedTime} ${formattedDate}` : formattedDate;
+    return formattedDate;
   };
 
   const headerContent = {
     overview: {
-      title: 'HR Dashboard',
-      description: 'Manage employees, approve requests, and monitor system analytics',
+      title: isManager ? 'Manager Dashboard' : 'Admin Dashboard',
+      description: isManager
+        ? 'Approve employee Out requests and track your own gatepass requests'
+        : 'Manage employees, approve requests, and monitor system analytics',
     },
     requests: {
       title: 'Requests',
-      description: 'Review, approve, and track all employee gatepass requests',
+      description: isManager
+        ? 'Review manager approvals and track your gatepass requests'
+        : 'Review, approve, and track all gatepass requests',
     },
     users: {
       title: 'User Management',
@@ -140,12 +180,13 @@ const HRDashboard = () => {
     const matchesSearch =
       search.length === 0 ||
       request.profiles?.name?.toLowerCase().includes(search) ||
-      request.purpose?.toLowerCase().includes(search) ||
+      formatGatepassReason(request).toLowerCase().includes(search) ||
       request.gatepass_id?.toLowerCase().includes(search) ||
       request.profiles?.department?.toLowerCase().includes(search);
 
     const matchesStatus =
-      requestStatusFilter === 'all' || request.status === requestStatusFilter;
+      requestStatusFilter === 'all'
+      || (requestStatusFilter === 'pending' ? isPendingGatepassStatus(request.status) : request.status === requestStatusFilter);
 
     const requestDate = request.date?.slice(0, 10);
     const matchesDateFrom = !requestFromDate || (requestDate && requestDate >= requestFromDate);
@@ -154,7 +195,7 @@ const HRDashboard = () => {
     return matchesSearch && matchesStatus && matchesDateFrom && matchesDateTo;
   });
 
-  const openRequestsTab = (filter: 'all' | 'pending' | 'approved' = 'all') => {
+  const openRequestsTab = (filter: 'all' | 'pending' | GatepassStatus = 'all') => {
     setRequestSearch('');
     setRequestStatusFilter(filter);
     setActiveTab('requests');
@@ -167,7 +208,7 @@ const HRDashboard = () => {
           <h2 className="text-2xl md:text-3xl font-bold">{currentHeader.title}</h2>
           <p className="text-white/90 text-sm md:text-base leading-tight">{currentHeader.description}</p>
         </div>
-        {activeTab === 'users' && (
+        {activeTab === 'users' && !isManager && (
           <CreateUserDialogButton className="shrink-0 h-12 rounded-xl bg-white px-5 text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.18)] hover:bg-slate-50" />
         )}
       </div>
@@ -195,7 +236,7 @@ const HRDashboard = () => {
           onClick={() => openRequestsTab('pending')}
         />
         <MetricCard
-          title="Approved Today"
+          title={isManager ? 'Awaiting Admin' : 'Approved'}
           value={stats?.approved?.toString() || '0'}
           icon={<CheckCircle className="w-6 h-6" />}
           color="green"
@@ -203,8 +244,8 @@ const HRDashboard = () => {
           onClick={() => openRequestsTab('approved')}
         />
         <MetricCard
-          title="Active Gatepasses"
-          value={stats?.active?.toString() || '0'}
+          title={isManager ? 'Rejected / Cancelled' : 'Active Gatepasses'}
+          value={(isManager ? ((stats?.rejected ?? 0) + (stats?.cancelled ?? 0)) : (stats?.active ?? 0)).toString()}
           icon={<UserCheck className="w-6 h-6" />}
           color="purple"
           trend={{ value: "+2%", isPositive: true }}
@@ -216,13 +257,24 @@ const HRDashboard = () => {
       <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-gray-50">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-gray-800">Recent Requests</CardTitle>
-          <Button 
-            variant="link" 
-            className="text-blue-600 hover:text-blue-700 font-semibold"
-            onClick={() => setActiveTab('requests')}
-          >
-            View All →
-          </Button>
+          <div className="flex items-center gap-3">
+            {isManager && (
+              <Button
+                onClick={() => setShowRequestForm(true)}
+                disabled={createGatepassMutation.isPending}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {createGatepassMutation.isPending ? 'Creating...' : 'New Request'}
+              </Button>
+            )}
+            <Button 
+              variant="link" 
+              className="text-blue-600 hover:text-blue-700 font-semibold"
+              onClick={() => setActiveTab('requests')}
+            >
+              View All →
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {gatepassesLoading ? (
@@ -239,13 +291,13 @@ const HRDashboard = () => {
                     </div>
                     <div>
                       <p className="font-semibold text-gray-800">{request.profiles?.name || 'Unknown User'}</p>
-                      <p className="text-sm text-gray-500">{request.purpose} • {request.gatepass_id}</p>
+                      <p className="text-sm text-gray-500">{formatGatepassReason(request)} • {request.gatepass_id}</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-4">
                     <div className="text-right">
                       <p className="text-sm font-medium text-gray-700">{formatRequestDateTime(request)}</p>
-                      <p className="text-sm text-gray-500">{request.expected_return_time}</p>
+                      <p className="text-sm text-gray-500">{request.profiles?.department || 'No Department'}</p>
                     </div>
                     {getStatusBadge(request.status)}
                     <div className="flex space-x-2">
@@ -257,7 +309,7 @@ const HRDashboard = () => {
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
-                      {request.status === 'pending' && (
+                      {((isManager && request.status === 'pending_manager_approval') || (!isManager && request.status === 'pending_admin_approval')) && (
                         <>
                           <Button 
                             size="sm" 
@@ -379,7 +431,7 @@ const HRDashboard = () => {
                     </div>
                     <div className="min-w-0 flex items-center gap-3 text-sm">
                       <h3 className="font-semibold text-gray-900 shrink-0">{request.profiles?.name || 'Unknown User'}</h3>
-                      <p className="text-gray-600 truncate">{request.purpose}</p>
+                      <p className="text-gray-600 truncate">{formatGatepassReason(request)}</p>
                       <p className="text-sm text-gray-500 truncate">
                         {request.gatepass_id} • {request.profiles?.department || 'No Department'}
                       </p>
@@ -397,7 +449,7 @@ const HRDashboard = () => {
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
-                      {request.status === 'pending' && (
+                      {((isManager && request.status === 'pending_manager_approval') || (!isManager && request.status === 'pending_admin_approval')) && (
                         <>
                           <Button 
                             size="sm" 
@@ -428,15 +480,24 @@ const HRDashboard = () => {
   );
 
   const renderContent = () => {
+    if (showRequestForm) {
+      return (
+        <GatepassRequestForm
+          onSubmit={handleNewRequest}
+          onCancel={() => setShowRequestForm(false)}
+        />
+      );
+    }
+
     switch (activeTab) {
       case 'overview':
         return renderOverview();
       case 'requests':
         return renderRequests();
       case 'users':
-        return <HRUsersTab />;
+        return isManager ? renderRequests() : <HRUsersTab />;
       case 'analytics':
-        return <HRAnalyticsTab />;
+        return isManager ? renderOverview() : <HRAnalyticsTab />;
       default:
         return renderOverview();
     }
@@ -467,7 +528,7 @@ const HRDashboard = () => {
         onClose={() => setSelectedGatepass(null)}
         onApprove={handleApprove}
         onReject={handleReject}
-        userRole="admin"
+        userRole={isManager ? 'manager' : 'admin'}
       />
     </div>
   );

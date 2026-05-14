@@ -12,6 +12,7 @@ import { Plus, FileText, Clock, CheckCircle, X, Users } from 'lucide-react';
 import { useMockAuth } from '../contexts/MockAuthContext';
 import { useGatepasses, useCreateGatepass } from '../hooks/useGatepasses';
 import { toast } from '@/hooks/use-toast';
+import { getGatepassStatusLabel, isPendingGatepassStatus } from '@/lib/gatepass';
 
 const EmployeeDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -30,6 +31,14 @@ const EmployeeDashboard = () => {
     }
   }, [isLoading, user]);
 
+  useEffect(() => {
+    if (!selectedGatepass) return;
+    const latestGatepass = gatepasses.find((gatepass) => gatepass.id === selectedGatepass.id);
+    if (latestGatepass && latestGatepass !== selectedGatepass) {
+      setSelectedGatepass(latestGatepass);
+    }
+  }, [gatepasses, selectedGatepass]);
+
   const menuItems = [
     { id: 'overview', label: 'Dashboard', icon: <Users className="w-5 h-5" /> },
     { id: 'requests', label: 'My Requests', icon: <FileText className="w-5 h-5" /> },
@@ -40,32 +49,38 @@ const EmployeeDashboard = () => {
     switch (status) {
       case 'approved':
         return <Badge className="bg-gradient-to-r from-green-100 to-green-200 text-green-700 border-green-300">Approved</Badge>;
+      case 'pending_manager_approval':
+        return <Badge className="bg-gradient-to-r from-amber-100 to-amber-200 text-amber-700 border-amber-300">Pending Manager Approval</Badge>;
+      case 'pending_admin_approval':
       case 'pending':
         return <Badge className="bg-gradient-to-r from-orange-100 to-orange-200 text-orange-700 border-orange-300">Pending</Badge>;
       case 'rejected':
         return <Badge className="bg-gradient-to-r from-red-100 to-red-200 text-red-700 border-red-300">Rejected</Badge>;
+      case 'cancelled':
+        return <Badge className="bg-gradient-to-r from-rose-100 to-rose-200 text-rose-700 border-rose-300">Cancelled</Badge>;
       case 'active':
-        return <Badge className="bg-gradient-to-r from-blue-100 to-blue-200 text-blue-700 border-blue-300">Active</Badge>;
+        return <Badge className="bg-gradient-to-r from-blue-100 to-blue-200 text-blue-700 border-blue-300">Out</Badge>;
       case 'completed':
-        return <Badge className="bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 border-gray-300">Completed</Badge>;
+        return <Badge className="bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 border-gray-300">In</Badge>;
       default:
-        return <Badge variant="secondary">{status}</Badge>;
+        return <Badge variant="secondary">{getGatepassStatusLabel(status as any)}</Badge>;
     }
   };
 
   const stats = {
     total: gatepasses.length,
-    pending: gatepasses.filter(g => g.status === 'pending').length,
+    pending: gatepasses.filter(g => isPendingGatepassStatus(g.status)).length,
     approved: gatepasses.filter(g => g.status === 'approved').length,
-    rejected: gatepasses.filter(g => g.status === 'rejected').length,
+    rejected: gatepasses.filter(g => g.status === 'rejected' || g.status === 'cancelled').length,
   };
 
   const handleNewRequest = async (data: any) => {
     try {
       await createGatepassMutation.mutateAsync({
-        purpose: data.purpose,
+        reason_id: data.reason_id,
+        reason_name: data.reason_name,
+        reason_description: data.reason_description,
         date: data.date,
-        out_time: data.out_time,
       });
       setShowRequestForm(false);
       toast({

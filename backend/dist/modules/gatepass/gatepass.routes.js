@@ -44,9 +44,13 @@ router.get('/', GatepassController.getAll);
 router.get('/today', GatepassController.getToday);
 router.get('/search', GatepassController.search);
 router.get('/stats', GatepassController.getStats);
+router.get('/analytics/lunch/daily', (0, role_middleware_1.requireRole)('admin'), GatepassController.getDailyLunchReport);
+router.get('/analytics/lunch/monthly', (0, role_middleware_1.requireRole)('admin'), GatepassController.getMonthlyLunchReport);
+router.get('/analytics/lunch/yearly', (0, role_middleware_1.requireRole)('admin'), GatepassController.getYearlyLunchReport);
+router.get('/analytics/lunch/live-status', (0, role_middleware_1.requireRole)('admin'), GatepassController.getLiveEmployeeStatuses);
 router.get('/:id', GatepassController.getOne);
 router.post('/', (0, role_middleware_1.requireRole)('employee', 'guest', 'admin', 'manager'), GatepassController.create);
-router.put('/:id/status', (0, role_middleware_1.requireRole)('admin', 'manager', 'gatekeeper'), GatepassController.updateStatus);
-router.delete('/:id', (0, role_middleware_1.requireRole)('admin', 'manager'), GatepassController.remove);
+router.put('/:id/status', (0, role_middleware_1.requireRole)('admin', 'manager', 'gatekeeper', 'employee', 'guest'), GatepassController.updateStatus);
+router.delete('/:id', (0, role_middleware_1.requireRole)('admin', 'manager', 'employee', 'guest'), GatepassController.remove);
 exports.default = router;
 //# sourceMappingURL=gatepass.routes.js.map

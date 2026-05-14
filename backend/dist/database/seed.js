@@ -5,105 +5,119 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runSeed = void 0;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
-const uuid_1 = require("uuid");
 const database_1 = require("../config/database");
 const SALT_ROUNDS = 10;
 const seedRoles = ['admin', 'manager', 'gatekeeper', 'employee', 'guest'];
-const seedGatepassReasons = ['Lunch', 'unit 2', 'visit to vendor', 'out'];
+const seedGatepassReasons = [
+    'Lunch',
+    'Out',
+    'Personal Work',
+    'Emergency',
+    'Client Visit',
+    'Visit to Vendor',
+    'Unit 2',
+    'Other',
+];
+const seedDepartments = ['Software R&D', 'Hardware R&D', 'Store', 'QA', 'Production'];
 const seedUsers = [
     {
-        id: (0, uuid_1.v4)(),
         name: 'Sarah Johnson',
         email: 'admin@company.com',
         password: 'Admin@123',
         role: 'admin',
-        department: 'Human Resources',
-        employee_id: 'ADM001',
-        phone: '+1-555-0101',
-        address: '123 Corporate Ave, Suite 100',
+        department_name: 'Software R&D',
     },
     {
-        id: (0, uuid_1.v4)(),
         name: 'Mike Carter',
         email: 'gatekeeper@company.com',
         password: 'Gate@123',
         role: 'gatekeeper',
-        department: 'Security',
-        employee_id: 'GKP001',
-        phone: '+1-555-0102',
-        address: '456 Guard Station Blvd',
+        department_name: 'Store',
     },
     {
-        id: (0, uuid_1.v4)(),
         name: 'Megan Hall',
         email: 'manager@company.com',
         password: 'Manager@123',
         role: 'manager',
-        department: 'Operations',
-        employee_id: 'MGR001',
-        phone: '+1-555-0104',
-        address: '101 Operations Park',
+        department_name: 'Software R&D',
     },
     {
-        id: (0, uuid_1.v4)(),
         name: 'John Doe',
         email: 'employee@company.com',
         password: 'Emp@123',
         role: 'employee',
-        department: 'Engineering',
-        employee_id: 'EMP001',
-        phone: '+1-555-0103',
-        address: '789 Developer Lane',
+        department_name: 'Software R&D',
+        manager_email: 'manager@company.com',
     },
     {
-        id: (0, uuid_1.v4)(),
         name: 'Jane Guest',
         email: 'guest@company.com',
         password: 'Guest@123',
         role: 'guest',
-        department: 'Visitor',
-        phone: '+1-555-0199',
     },
 ];
 const runSeed = async () => {
     const pool = (0, database_1.getDb)();
     console.log('\n🌱 Seeding database...\n');
     for (const role of seedRoles) {
-        await pool.query(`INSERT INTO roles (name)
-       VALUES ($1)
-       ON CONFLICT (name) DO NOTHING`, [role]);
+        await pool.query(`INSERT INTO roles (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [role]);
     }
     console.log(`  ✅ Seeded roles: ${seedRoles.join(', ')}`);
     for (const reason of seedGatepassReasons) {
-        await pool.query(`INSERT INTO gatepass_reasons (name)
-       VALUES ($1)
-       ON CONFLICT (name) DO NOTHING`, [reason]);
+        await pool.query(`INSERT INTO gatepass_reasons (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [reason]);
     }
     console.log(`  ✅ Seeded gatepass reasons: ${seedGatepassReasons.join(', ')}`);
+    for (const dept of seedDepartments) {
+        await pool.query(`INSERT INTO departments (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [dept]);
+    }
+    console.log(`  ✅ Seeded departments: ${seedDepartments.join(', ')}`);
+    // Build lookup maps after insertion so we use the actual DB-assigned IDs
+    const roleRows = await pool.query(`SELECT name, id AS role_id FROM roles`);
+    const roleIdMap = {};
+    for (const r of roleRows.rows)
+        roleIdMap[r.name] = r.role_id;
+    const deptRows = await pool.query(`SELECT name, id AS department_id FROM departments`);
+    const deptIdMap = {};
+    for (const d of deptRows.rows)
+        deptIdMap[d.name] = d.department_id;
     for (const user of seedUsers) {
         const hashed = await bcryptjs_1.default.hash(user.password, SALT_ROUNDS);
-        await pool.query(`INSERT INTO users (id, name, email, password, role, department, employee_id, phone, address)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (email) DO NOTHING`, [
-            user.id,
-            user.name,
-            user.email,
-            hashed,
-            user.role,
-            user.department ?? null,
-            user.employee_id ?? null,
-            user.phone ?? null,
-            user.address ?? null,
-        ]);
+        const roleId = roleIdMap[user.role] ?? null;
+        const deptId = user.department_name ? (deptIdMap[user.department_name] ?? null) : null;
+        await pool.query(`INSERT INTO users
+         (name, email, password, role_id, department_id, manager_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (email) DO UPDATE SET
+         name = EXCLUDED.name,
+         password = EXCLUDED.password,
+         role_id = EXCLUDED.role_id,
+         department_id = EXCLUDED.department_id,
+         updated_at = NOW()`, [user.name, user.email, hashed, roleId, deptId, null]);
         console.log(`  ✅ Seeded ${user.role}: ${user.email}  (password: ${user.password})`);
     }
+    const userRows = await pool.query(`SELECT id, email FROM users`);
+    const userIdMap = {};
+    for (const row of userRows.rows)
+        userIdMap[row.email] = row.id;
+    for (const user of seedUsers) {
+        if (!user.manager_email)
+            continue;
+        const managerId = userIdMap[user.manager_email];
+        if (!managerId)
+            throw new Error(`Manager not found for ${user.email}`);
+        await pool.query(`UPDATE users
+       SET manager_id = $1,
+           updated_at = NOW()
+       WHERE email = $2`, [managerId, user.email]);
+    }
+    console.log('  ✅ Seeded reporting relationships');
     console.log('\n✅ Seeding complete!');
     console.log('Default credentials:');
-    console.log('  Admin      → admin@company.com      / Admin@123');
-    console.log('  Manager    → manager@company.com    / Manager@123');
-    console.log('  Gatekeeper → gatekeeper@company.com / Gate@123');
-    console.log('  Employee   → employee@company.com   / Emp@123');
-    console.log('  Guest      → GUEST123 (guest code)  or guest@company.com / Guest@123\n');
+    console.log('  Admin      → admin@company.com / sarah.johnson  / Admin@123');
+    console.log('  Manager    → manager@company.com / megan.hall   / Manager@123');
+    console.log('  Gatekeeper → gatekeeper@company.com / mike.carter / Gate@123');
+    console.log('  Employee   → employee@company.com / john.doe    / Emp@123');
+    console.log('  Guest      → guest@company.com / jane.guest     / Guest@123\n');
 };
 exports.runSeed = runSeed;
 // standalone: tsx src/database/seed.ts

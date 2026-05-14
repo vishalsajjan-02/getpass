@@ -8,9 +8,25 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const database_1 = require("../../../config/database");
 const jwt_utils_1 = require("../../../utils/jwt.utils");
 const env_1 = require("../../../config/env");
+const USER_SELECT = `
+  SELECT u.id, u.name, u.email, r.name AS role, u.role_id,
+         d.name AS department, u.department_id,
+         u.manager_id, u.created_at, u.updated_at
+  FROM users u
+  JOIN roles r ON r.id = u.role_id
+  LEFT JOIN departments d ON d.id = u.department_id
+`;
+const USER_WITH_PASSWORD_SELECT = `
+  SELECT u.id, u.name, u.email, u.password, r.name AS role, u.role_id,
+         d.name AS department, u.department_id,
+         u.manager_id, u.created_at, u.updated_at
+  FROM users u
+  JOIN roles r ON r.id = u.role_id
+  LEFT JOIN departments d ON d.id = u.department_id
+`;
 const loginWithCredentials = async (email, password) => {
     const pool = (0, database_1.getDb)();
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const result = await pool.query(`${USER_WITH_PASSWORD_SELECT} WHERE u.email = $1`, [email]);
     const row = result.rows[0];
     if (!row)
         throw new Error('Invalid email or password');
@@ -27,18 +43,17 @@ const guestLogin = async (code) => {
         throw new Error('Invalid guest code');
     }
     const pool = (0, database_1.getDb)();
-    const result = await pool.query("SELECT * FROM users WHERE role = 'guest' LIMIT 1");
+    const result = await pool.query(`${USER_SELECT} WHERE r.name = 'guest' LIMIT 1`);
     const row = result.rows[0];
     if (!row)
         throw new Error('No guest account configured. Run seed first.');
-    const { password: _pw, ...user } = row;
-    const token = (0, jwt_utils_1.signToken)({ userId: user.id, email: user.email, role: user.role });
-    return { token, user: user };
+    const token = (0, jwt_utils_1.signToken)({ userId: row.id, email: row.email, role: row.role });
+    return { token, user: row };
 };
 exports.guestLogin = guestLogin;
 const getMe = async (userId) => {
     const pool = (0, database_1.getDb)();
-    const result = await pool.query('SELECT id,name,email,role,department,employee_id,phone,address,created_at,updated_at FROM users WHERE id = $1', [userId]);
+    const result = await pool.query(`${USER_SELECT} WHERE u.id = $1`, [userId]);
     const row = result.rows[0];
     if (!row)
         throw new Error('User not found');

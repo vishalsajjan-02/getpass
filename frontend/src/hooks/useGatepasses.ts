@@ -2,29 +2,59 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/services/api';
 
+export type GatepassStatus =
+  | 'pending'
+  | 'pending_manager_approval'
+  | 'pending_admin_approval'
+  | 'approved'
+  | 'rejected'
+  | 'cancelled'
+  | 'active'
+  | 'completed';
+
+export type ApprovalFlow = 'admin_only' | 'manager_then_admin';
+
+export interface GatepassApprovalRequest {
+  id: string;
+  gatepass_id: string;
+  approver_user_id: string;
+  approver_role: 'admin' | 'manager';
+  step: 1 | 2;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  remarks?: string;
+  acted_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Gatepass {
   id: string;
   gatepass_id: string;
   user_id: string;
-  purpose: string;
+  reason_id: string;
+  reason_name: string;
+  display_reason: string;
+  reason_description?: string;
   destination?: string;
   date: string;
-  expected_return_time?: string;
-  actual_return_time?: string;
-  out_time?: string;
-  status: 'pending' | 'approved' | 'rejected' | 'active' | 'completed';
-  approved_by?: string;
-  approved_at?: string;
+  status: GatepassStatus;
+  approval_flow: ApprovalFlow;
   rejection_reason?: string;
   is_emergency?: boolean;
+  checked_out_at?: string;
+  checked_out_by?: string;
+  checked_in_at?: string;
+  checked_in_by?: string;
+  total_minutes_outside: number;
   created_at: string;
   updated_at: string;
   profiles?: {
     name: string;
     email: string;
     department?: string;
-    employee_id?: string;
+    manager_id?: string;
   } | null;
+  approval_requests: GatepassApprovalRequest[];
 }
 
 export const useGatepasses = () => {
@@ -42,11 +72,11 @@ export const useCreateGatepass = () => {
 
   return useMutation({
     mutationFn: (data: {
-      purpose: string;
+      reason_id?: string;
+      reason_name?: string;
+      reason_description?: string;
       destination?: string;
       date?: string;
-      expected_return_time?: string;
-      out_time?: string;
       is_emergency?: boolean;
     }) => api.post<Gatepass>('/gatepasses', data),
     onSuccess: () => {
@@ -62,11 +92,9 @@ export const useUpdateGatepassStatus = () => {
   return useMutation({
     mutationFn: (data: {
       id: string;
-      status: string;
-      approved_by?: string;
+      status: GatepassStatus;
       rejection_reason?: string;
-      out_time?: string;
-      actual_return_time?: string;
+      remarks?: string;
     }) => {
       const { id, ...body } = data;
       return api.put<Gatepass>(`/gatepasses/${id}/status`, body);

@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Check, X, Eye, Clock, User, MapPin, Calendar } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { formatGatepassReason, getGatepassStatusLabel } from '@/lib/gatepass';
 
 interface GatepassDetailsModalProps {
   gatepass: any;
@@ -29,16 +30,11 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
 
   if (!gatepass) return null;
 
-  const formatTime = (timeString: string | null) => {
-    if (!timeString) return 'Not set';
-    return new Date(`2000-01-01T${timeString}`).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
-  };
+  const canApprove =
+    (userRole === 'admin' && gatepass.status === 'pending_admin_approval') ||
+    (userRole === 'manager' && gatepass.status === 'pending_manager_approval');
 
-  const formatDateTime = (dateTimeString: string | null) => {
+  const formatDateTime = (dateTimeString: string | null | undefined) => {
     if (!dateTimeString) return 'Not set';
     return new Date(dateTimeString).toLocaleString('en-US', {
       year: 'numeric',
@@ -54,16 +50,21 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
     switch (status) {
       case 'approved':
         return <Badge className="bg-green-100 text-green-700 border-green-300">Approved</Badge>;
+      case 'pending_manager_approval':
+        return <Badge className="bg-amber-100 text-amber-700 border-amber-300">Pending Manager Approval</Badge>;
+      case 'pending_admin_approval':
       case 'pending':
         return <Badge className="bg-orange-100 text-orange-700 border-orange-300">Pending</Badge>;
       case 'rejected':
         return <Badge className="bg-red-100 text-red-700 border-red-300">Rejected</Badge>;
+      case 'cancelled':
+        return <Badge className="bg-rose-100 text-rose-700 border-rose-300">Cancelled</Badge>;
       case 'active':
-        return <Badge className="bg-blue-100 text-blue-700 border-blue-300">Active</Badge>;
+        return <Badge className="bg-blue-100 text-blue-700 border-blue-300">Out</Badge>;
       case 'completed':
-        return <Badge className="bg-gray-100 text-gray-700 border-gray-300">Completed</Badge>;
+        return <Badge className="bg-gray-100 text-gray-700 border-gray-300">In</Badge>;
       default:
-        return <Badge variant="secondary">{status}</Badge>;
+        return <Badge variant="secondary">{getGatepassStatusLabel(status as any)}</Badge>;
     }
   };
 
@@ -138,8 +139,8 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
           {/* Purpose and Destination */}
           <div className="space-y-4">
             <div>
-              <Label className="text-sm font-medium text-gray-700">Purpose</Label>
-              <p className="mt-1 p-3 bg-gray-50 rounded-md">{gatepass.purpose}</p>
+              <Label className="text-sm font-medium text-gray-700">Reason</Label>
+              <p className="mt-1 p-3 bg-gray-50 rounded-md">{formatGatepassReason(gatepass)}</p>
             </div>
             
             {gatepass.destination && (
@@ -151,54 +152,51 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
                 </div>
               </div>
             )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm font-medium text-gray-700">Approval Flow</Label>
+                <p className="mt-1 text-sm text-gray-600">
+                  {gatepass.approval_flow === 'manager_then_admin' ? 'Manager then Admin' : 'Admin Only'}
+                </p>
+              </div>
+              <div>
+                <Label className="text-sm font-medium text-gray-700">Current Status</Label>
+                <p className="mt-1 text-sm text-gray-600">{getGatepassStatusLabel(gatepass.status)}</p>
+              </div>
+            </div>
           </div>
 
-          {/* Time Details based on status */}
+          {/* Time Details */}
           <div className="space-y-4">
-            {/* For pending status - show expected out time */}
-            {gatepass.status === 'pending' && gatepass.out_time && (
-              <div className="flex items-center space-x-3">
-                <Clock className="w-5 h-5 text-gray-500" />
-                <div>
-                  <Label className="text-sm font-medium text-gray-700">Expected Out Time</Label>
-                  <p className="mt-1">{formatTime(gatepass.out_time)}</p>
-                </div>
-              </div>
-            )}
-
-            {/* For active/completed status - show out time and return time */}
-            {(gatepass.status === 'active' || gatepass.status === 'completed') && (
+            {(gatepass.checked_out_at || gatepass.checked_in_at) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {gatepass.out_time && (
+                {gatepass.checked_out_at && (
                   <div className="flex items-center space-x-3">
                     <Clock className="w-5 h-5 text-gray-500" />
                     <div>
                       <Label className="text-sm font-medium text-gray-700">Out Time</Label>
-                      <p className="mt-1">{formatTime(gatepass.out_time)}</p>
+                      <p className="mt-1">{formatDateTime(gatepass.checked_out_at)}</p>
                     </div>
                   </div>
                 )}
                 
-                {gatepass.actual_return_time && (
+                {gatepass.checked_in_at && (
                   <div className="flex items-center space-x-3">
                     <Clock className="w-5 h-5 text-gray-500" />
                     <div>
-                      <Label className="text-sm font-medium text-gray-700">Return Time</Label>
-                      <p className="mt-1">{formatTime(gatepass.actual_return_time)}</p>
+                      <Label className="text-sm font-medium text-gray-700">In Time</Label>
+                      <p className="mt-1">{formatDateTime(gatepass.checked_in_at)}</p>
                     </div>
                   </div>
                 )}
               </div>
             )}
 
-            {/* For approved status - show expected out time */}
-            {gatepass.status === 'approved' && gatepass.out_time && (
-              <div className="flex items-center space-x-3">
-                <Clock className="w-5 h-5 text-gray-500" />
-                <div>
-                  <Label className="text-sm font-medium text-gray-700">Expected Out Time</Label>
-                  <p className="mt-1">{formatTime(gatepass.out_time)}</p>
-                </div>
+            {gatepass.total_minutes_outside > 0 && (
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <Label className="text-sm font-medium text-blue-700">Time Outside During Working Hours</Label>
+                <p className="mt-1 text-blue-600">{gatepass.total_minutes_outside} minutes</p>
               </div>
             )}
           </div>
@@ -222,10 +220,31 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
             </div>
           )}
 
-          {/* Approval Actions for Admin */}
-          {userRole === 'admin' && gatepass.status === 'pending' && (
+          {Array.isArray(gatepass.approval_requests) && gatepass.approval_requests.length > 0 && (
+            <div className="space-y-3">
+              <Label className="text-sm font-medium text-gray-700">Approval Requests</Label>
+              <div className="space-y-2">
+                {gatepass.approval_requests.map((approval: any) => (
+                  <div key={approval.id} className="flex items-center justify-between rounded-lg border bg-gray-50 px-3 py-2 text-sm">
+                    <div>
+                      <p className="font-medium text-gray-800">
+                        Step {approval.step} • {approval.approver_role}
+                      </p>
+                      {approval.remarks && <p className="text-gray-500">{approval.remarks}</p>}
+                    </div>
+                    <Badge variant="outline">{getGatepassStatusLabel(approval.status)}</Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Approval Actions */}
+          {canApprove && (
             <div className="space-y-4 bg-gray-50 p-4 rounded-lg">
-              <h4 className="font-medium text-gray-800">Admin Actions</h4>
+              <h4 className="font-medium text-gray-800">
+                {userRole === 'manager' ? 'Manager Actions' : 'Admin Actions'}
+              </h4>
               
               <div className="space-y-3">
                 <div>
@@ -261,10 +280,16 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
           )}
 
           {/* Gatekeeper Actions */}
-          {userRole === 'gatekeeper' && gatepass.status === 'approved' && (
+          {userRole === 'gatekeeper' && (
             <div className="bg-blue-50 p-4 rounded-lg">
               <h4 className="font-medium text-blue-800">Gatekeeper Actions</h4>
-              <p className="text-sm text-blue-600 mt-1">This gatepass is approved and ready for use</p>
+              <p className="text-sm text-blue-600 mt-1">
+                {gatepass.status === 'approved'
+                  ? 'This gatepass is approved and ready for the Out action.'
+                  : gatepass.status === 'active'
+                    ? 'Employee is currently outside. Use the In action on the dashboard when they return.'
+                    : 'All request statuses are visible here for gatekeeper tracking.'}
+              </p>
             </div>
           )}
         </div>

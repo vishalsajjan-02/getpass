@@ -5,5 +5,7 @@ export declare const env: {
     readonly JWT_EXPIRES_IN: string;
     readonly GUEST_CODES: string[];
     readonly DATABASE_URL: string;
+    readonly TIME_FOR_LUNCH: string;
+    readonly TIME_FOR_LUNCH_MINUTES: number;
 };
 //# sourceMappingURL=env.d.ts.map

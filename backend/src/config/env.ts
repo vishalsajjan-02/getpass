@@ -3,6 +3,12 @@ import path from 'path';
 
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
+const parseDurationMinutes = (value: string | undefined, fallback: number): number => {
+  const match = value?.match(/(\d+)/);
+  const minutes = match ? parseInt(match[1], 10) : fallback;
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : fallback;
+};
+
 export const env = {
   PORT: parseInt(process.env.PORT || '3001', 10),
   NODE_ENV: process.env.NODE_ENV || 'development',
@@ -10,4 +16,6 @@ export const env = {
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
   GUEST_CODES: (process.env.GUEST_CODES || 'GUEST123').split(',').map(c => c.trim()),
   DATABASE_URL: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/gatepass_nexus',
+  TIME_FOR_LUNCH: process.env.timeforlunch || '30min',
+  TIME_FOR_LUNCH_MINUTES: parseDurationMinutes(process.env.timeforlunch, 30),
 } as const;

@@ -3,24 +3,52 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteUser = exports.updateUser = exports.createUser = exports.getUserById = exports.getRoles = exports.getAllUsers = void 0;
+exports.deleteUser = exports.updateUser = exports.createUser = exports.getUserById = exports.getRoles = exports.getManagers = exports.getDepartments = exports.getAllUsers = void 0;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
-const uuid_1 = require("uuid");
 const database_1 = require("../../../config/database");
 const SALT_ROUNDS = 10;
-const PUBLIC_COLS = 'id,name,email,role,department,employee_id,phone,address,created_at,updated_at';
+const USER_SELECT = `
+  SELECT u.id, u.name, u.email, r.name AS role, u.role_id,
+         d.name AS department, u.department_id,
+         u.manager_id, u.created_at, u.updated_at
+  FROM users u
+  JOIN roles r ON r.id = u.role_id
+  LEFT JOIN departments d ON d.id = u.department_id
+`;
 const getAllUsers = async () => {
-    const result = await (0, database_1.getDb)().query(`SELECT ${PUBLIC_COLS} FROM users ORDER BY role, name`);
+    const result = await (0, database_1.getDb)().query(`${USER_SELECT} ORDER BY r.name, u.name`);
     return result.rows;
 };
 exports.getAllUsers = getAllUsers;
+const getDepartments = async () => {
+    const result = await (0, database_1.getDb)().query(`SELECT id AS department_id, name FROM departments ORDER BY name`);
+    return result.rows;
+};
+exports.getDepartments = getDepartments;
+const getManagers = async () => {
+    const result = await (0, database_1.getDb)().query(`SELECT u.id, u.name
+     FROM users u
+     JOIN roles r ON r.id = u.role_id
+     WHERE r.name = 'manager'
+     ORDER BY u.name`);
+    return result.rows;
+};
+exports.getManagers = getManagers;
 const getRoles = async () => {
-    const result = await (0, database_1.getDb)().query('SELECT name FROM roles ORDER BY CASE name WHEN \'admin\' THEN 1 WHEN \'manager\' THEN 2 WHEN \'gatekeeper\' THEN 3 WHEN \'employee\' THEN 4 WHEN \'guest\' THEN 5 ELSE 6 END');
+    const result = await (0, database_1.getDb)().query(`SELECT id AS role_id, name FROM roles
+     ORDER BY CASE name
+       WHEN 'admin'      THEN 1
+       WHEN 'manager'    THEN 2
+       WHEN 'gatekeeper' THEN 3
+       WHEN 'employee'   THEN 4
+       WHEN 'guest'      THEN 5
+       ELSE 6
+     END`);
     return result.rows;
 };
 exports.getRoles = getRoles;
 const getUserById = async (id) => {
-    const result = await (0, database_1.getDb)().query(`SELECT ${PUBLIC_COLS} FROM users WHERE id = $1`, [id]);
+    const result = await (0, database_1.getDb)().query(`${USER_SELECT} WHERE u.id = $1`, [id]);
     const row = result.rows[0];
     if (!row)
         throw new Error('User not found');
@@ -32,27 +60,34 @@ const createUser = async (input) => {
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [input.email]);
     if (existing.rows[0])
         throw new Error('Email already in use');
-    const roleExists = await pool.query('SELECT 1 FROM roles WHERE name = $1', [input.role]);
-    if (!roleExists.rows[0])
+    const roleRow = await pool.query('SELECT id AS role_id FROM roles WHERE name = $1', [input.role]);
+    if (!roleRow.rows[0])
         throw new Error('Invalid role');
-    const id = (0, uuid_1.v4)();
+    const roleId = roleRow.rows[0].role_id;
     const hashed = await bcryptjs_1.default.hash(input.password, SALT_ROUNDS);
-    await pool.query(`INSERT INTO users (id, name, email, password, role, department, employee_id, phone, address)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [id, input.name, input.email, hashed, input.role,
-        input.department ?? null, input.employee_id ?? null,
-        input.phone ?? null, input.address ?? null]);
-    return (0, exports.getUserById)(id);
+    const inserted = await pool.query(`INSERT INTO users
+       (name, email, password, role_id, department_id, manager_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id`, [input.name, input.email, hashed, roleId, input.department_id ?? null, input.manager_id ?? null]);
+    return (0, exports.getUserById)(inserted.rows[0].id);
 };
 exports.createUser = createUser;
 const updateUser = async (id, input) => {
     const pool = (0, database_1.getDb)();
     await (0, exports.getUserById)(id);
+    const extra = {};
     if (input.role) {
-        const roleExists = await pool.query('SELECT 1 FROM roles WHERE name = $1', [input.role]);
-        if (!roleExists.rows[0])
+        const roleRow = await pool.query('SELECT id AS role_id FROM roles WHERE name = $1', [input.role]);
+        if (!roleRow.rows[0])
             throw new Error('Invalid role');
+        extra.role_id = roleRow.rows[0].role_id;
     }
-    const entries = Object.entries(input).filter(([, v]) => v !== undefined);
+    if (input.password) {
+        extra.password = await bcryptjs_1.default.hash(input.password, SALT_ROUNDS);
+    }
+    const { password: _pw, ...inputWithoutPassword } = input;
+    const merged = { ...inputWithoutPassword, ...extra };
+    const entries = Object.entries(merged).filter(([, v]) => v !== undefined);
     if (!entries.length)
         return (0, exports.getUserById)(id);
     const fields = entries.map(([k], i) => `${k} = $${i + 1}`).join(', ');

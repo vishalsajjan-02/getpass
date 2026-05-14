@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import MetricCard from '../components/MetricCard';
 import GatepassDetailsModal from '../components/GatepassDetailsModal';
@@ -12,6 +12,7 @@ import { useGatepasses, useUpdateGatepassStatus } from '../hooks/useGatepasses';
 import { useMockAuth } from '../contexts/MockAuthContext';
 import { toast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { formatGatepassReason, getGatepassStatusLabel } from '@/lib/gatepass';
 
 const SecurityDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -24,6 +25,14 @@ const SecurityDashboard = () => {
   const updateGatepassMutation = useUpdateGatepassStatus();
   const isMobile = useIsMobile();
 
+  useEffect(() => {
+    if (!selectedGatepass) return;
+    const latestGatepass = gatepasses.find((gatepass) => gatepass.id === selectedGatepass.id);
+    if (latestGatepass && latestGatepass !== selectedGatepass) {
+      setSelectedGatepass(latestGatepass);
+    }
+  }, [gatepasses, selectedGatepass]);
+
   const menuItems = [
     { id: 'overview', label: 'Dashboard', icon: <Shield className="w-5 h-5" /> },
     { id: 'gatepasses', label: 'Gate Passes', icon: <QrCode className="w-5 h-5" /> },
@@ -31,40 +40,33 @@ const SecurityDashboard = () => {
   ];
 
   // Filter gatepasses based on search term
-  const filteredGatepasses = gatepasses.filter(gatepass => 
+  const filteredGatepasses = gatepasses.filter((gatepass) =>
     gatepass.profiles?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     gatepass.gatepass_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    gatepass.purpose?.toLowerCase().includes(searchTerm.toLowerCase())
+    formatGatepassReason(gatepass).toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return <Badge className="bg-gradient-to-r from-green-100 to-green-200 text-green-700 border-green-300">Approved - Ready to Exit</Badge>;
-      case 'pending':
-        return <Badge className="bg-gradient-to-r from-orange-100 to-orange-200 text-orange-700 border-orange-300">Pending</Badge>;
-      case 'rejected':
-        return <Badge className="bg-gradient-to-r from-red-100 to-red-200 text-red-700 border-red-300">Rejected</Badge>;
-      case 'active':
-        return <Badge className="bg-gradient-to-r from-blue-100 to-blue-200 text-blue-700 border-blue-300">Active (Out)</Badge>;
-      case 'completed':
-        return <Badge className="bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 border-gray-300">Completed</Badge>;
-      default:
-        return <Badge variant="secondary">{status}</Badge>;
-    }
+    const approved = status === 'approved';
+    return (
+      <Badge className={approved
+        ? 'bg-gradient-to-r from-green-100 to-green-200 text-green-700 border-green-300'
+        : 'bg-gradient-to-r from-red-100 to-red-200 text-red-700 border-red-300'}
+      >
+        {getGatepassStatusLabel(status as any)}
+      </Badge>
+    );
   };
 
-  const handleCheckOut = async (gatepassId: string) => {
+  const handleOut = async (gatepassId: string) => {
     try {
-      const currentTime = new Date().toTimeString().slice(0, 5);
       await updateGatepassMutation.mutateAsync({
         id: gatepassId,
         status: 'active',
-        out_time: currentTime
       });
       toast({
         title: "Success",
-        description: `Employee checked out at ${currentTime}`,
+        description: 'Employee marked Out successfully',
       });
     } catch (error) {
       console.error('Error checking out employee:', error);
@@ -76,17 +78,15 @@ const SecurityDashboard = () => {
     }
   };
 
-  const handleCheckIn = async (gatepassId: string) => {
+  const handleIn = async (gatepassId: string) => {
     try {
-      const currentTime = new Date().toTimeString().slice(0, 5);
       await updateGatepassMutation.mutateAsync({
         id: gatepassId,
         status: 'completed',
-        actual_return_time: currentTime
       });
       toast({
         title: "Success",
-        description: `Employee checked in at ${currentTime}`,
+        description: 'Employee marked In successfully',
       });
     } catch (error) {
       console.error('Error checking in employee:', error);
@@ -102,7 +102,7 @@ const SecurityDashboard = () => {
     todaysPasses: gatepasses.filter(g => g.date === new Date().toISOString().split('T')[0]).length,
     activeNow: gatepasses.filter(g => g.status === 'active').length,
     checkedIn: gatepasses.filter(g => g.status === 'completed').length,
-    pendingReturn: gatepasses.filter(g => g.status === 'active' && new Date(`${g.date}T${g.expected_return_time}`) < new Date()).length,
+    pendingReturn: gatepasses.filter(g => g.status !== 'approved').length,
   };
 
   const renderOverview = () => (
@@ -136,9 +136,9 @@ const SecurityDashboard = () => {
           color="green"
         />
         <MetricCard
-          title="Pending Return"
+          title="Not Approved"
           value={stats.pendingReturn.toString()}
-          subtitle="Overdue"
+          subtitle="Pending, rejected, cancelled"
           icon={<AlertTriangle className="w-4 h-4 md:w-6 md:h-6" />}
           color="red"
         />
@@ -213,22 +213,26 @@ const SecurityDashboard = () => {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-gray-800 text-sm md:text-base truncate">{gatepass.profiles?.name || 'Unknown'}</p>
-                      <p className="text-xs md:text-sm text-gray-500 truncate">{gatepass.profiles?.employee_id} • {gatepass.profiles?.department}</p>
-                      <p className="text-xs md:text-sm text-gray-600 truncate">{gatepass.purpose}</p>
+                      <p className="text-xs md:text-sm text-gray-500 truncate">{gatepass.profiles?.email} • {gatepass.profiles?.department}</p>
+                      <p className="text-xs md:text-sm text-gray-600 truncate">{formatGatepassReason(gatepass)}</p>
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-3 sm:space-y-0 sm:space-x-4 lg:space-x-6 w-full lg:w-auto">
                     <div className="flex space-x-4">
-                      {gatepass.out_time && (
+                      {gatepass.checked_out_at && (
                         <div className="text-center">
-                          <p className="text-xs font-semibold text-gray-700">OUT TIME</p>
-                          <p className="text-xs font-medium text-blue-600">{gatepass.out_time}</p>
+                          <p className="text-xs font-semibold text-gray-700">OUT</p>
+                          <p className="text-xs font-medium text-blue-600">
+                            {new Date(gatepass.checked_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
                         </div>
                       )}
-                      {gatepass.actual_return_time && (
+                      {gatepass.checked_in_at && (
                         <div className="text-center">
-                          <p className="text-xs font-semibold text-gray-700">IN TIME</p>
-                          <p className="text-xs font-medium text-green-600">{gatepass.actual_return_time}</p>
+                          <p className="text-xs font-semibold text-gray-700">IN</p>
+                          <p className="text-xs font-medium text-green-600">
+                            {new Date(gatepass.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -236,24 +240,24 @@ const SecurityDashboard = () => {
                       {getStatusBadge(gatepass.status)}
                       {gatepass.status === 'approved' && (
                         <Button 
-                          onClick={() => handleCheckOut(gatepass.id)}
+                          onClick={() => handleOut(gatepass.id)}
                           disabled={updateGatepassMutation.isPending}
                           size="sm"
                           className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all duration-200 text-xs font-semibold"
                         >
                           <LogOut className="w-3 h-3 mr-1" />
-                          {updateGatepassMutation.isPending ? 'Checking Out...' : 'Check Out'}
+                          {updateGatepassMutation.isPending ? 'Saving...' : 'Out'}
                         </Button>
                       )}
                       {gatepass.status === 'active' && (
                         <Button 
-                          onClick={() => handleCheckIn(gatepass.id)}
+                          onClick={() => handleIn(gatepass.id)}
                           disabled={updateGatepassMutation.isPending}
                           size="sm"
                           className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-lg hover:shadow-xl transition-all duration-200 text-xs font-semibold"
                         >
                           <CheckCircle className="w-3 h-3 mr-1" />
-                          {updateGatepassMutation.isPending ? 'Checking In...' : 'Check In'}
+                          {updateGatepassMutation.isPending ? 'Saving...' : 'In'}
                         </Button>
                       )}
                       <Button 

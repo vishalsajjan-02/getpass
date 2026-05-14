@@ -17,8 +17,11 @@ export interface Profile {
 export interface GatepassStats {
   total: number;
   pending: number;
+  pending_manager_approval: number;
+  pending_admin_approval: number;
   approved: number;
   rejected: number;
+  cancelled: number;
   active: number;
   completed: number;
 }
