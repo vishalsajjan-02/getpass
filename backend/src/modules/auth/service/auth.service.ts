@@ -5,11 +5,21 @@ import { env } from '../../../config/env';
 import type { User, UserWithPassword } from '../../../types';
 
 const USER_SELECT = `
-  SELECT u.id, u.name, u.email, u.role, u.role_id,
+  SELECT u.id, u.name, u.email, r.name AS role, u.role_id,
          d.name AS department, u.department_id,
          u.manager_id, u.created_at, u.updated_at
   FROM users u
-  LEFT JOIN departments d ON d.department_id = u.department_id
+  JOIN roles r ON r.id = u.role_id
+  LEFT JOIN departments d ON d.id = u.department_id
+`;
+
+const USER_WITH_PASSWORD_SELECT = `
+  SELECT u.id, u.name, u.email, u.password, r.name AS role, u.role_id,
+         d.name AS department, u.department_id,
+         u.manager_id, u.created_at, u.updated_at
+  FROM users u
+  JOIN roles r ON r.id = u.role_id
+  LEFT JOIN departments d ON d.id = u.department_id
 `;
 
 export const loginWithCredentials = async (
@@ -18,7 +28,7 @@ export const loginWithCredentials = async (
 ): Promise<{ token: string; user: User }> => {
   const pool = getDb();
   const result = await pool.query(
-    'SELECT * FROM users WHERE email = $1',
+    `${USER_WITH_PASSWORD_SELECT} WHERE u.email = $1`,
     [email],
   );
   const row = result.rows[0] as UserWithPassword | undefined;
@@ -40,7 +50,7 @@ export const guestLogin = async (code: string): Promise<{ token: string; user: U
 
   const pool = getDb();
   const result = await pool.query(
-    `${USER_SELECT} WHERE u.role = 'guest' LIMIT 1`,
+    `${USER_SELECT} WHERE r.name = 'guest' LIMIT 1`,
   );
   const row = result.rows[0] as User | undefined;
   if (!row) throw new Error('No guest account configured. Run seed first.');

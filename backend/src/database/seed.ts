@@ -82,11 +82,11 @@ export const runSeed = async (): Promise<void> => {
   console.log(`  ✅ Seeded departments: ${seedDepartments.join(', ')}`);
 
   // Build lookup maps after insertion so we use the actual DB-assigned IDs
-  const roleRows = await pool.query(`SELECT name, role_id FROM roles`);
+  const roleRows = await pool.query(`SELECT name, id AS role_id FROM roles`);
   const roleIdMap: Record<string, string> = {};
   for (const r of roleRows.rows) roleIdMap[r.name] = r.role_id;
 
-  const deptRows = await pool.query(`SELECT name, department_id FROM departments`);
+  const deptRows = await pool.query(`SELECT name, id AS department_id FROM departments`);
   const deptIdMap: Record<string, string> = {};
   for (const d of deptRows.rows) deptIdMap[d.name] = d.department_id;
 
@@ -97,11 +97,10 @@ export const runSeed = async (): Promise<void> => {
 
     await pool.query(
       `INSERT INTO users
-         (name, email, password, role, role_id, department_id, manager_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (name, email, password, role_id, department_id, manager_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (email) DO NOTHING`,
-      [user.name, user.email, hashed,
-       user.role, roleId, deptId, user.manager_id ?? null],
+      [user.name, user.email, hashed, roleId, deptId, user.manager_id ?? null],
     );
     console.log(`  ✅ Seeded ${user.role}: ${user.email}  (password: ${user.password})`);
   }

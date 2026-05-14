@@ -1,13 +1,12 @@
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { format } from 'date-fns';
-import { Plus, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useGatepassReasons } from '@/hooks/useLookupData';
 
@@ -16,28 +15,61 @@ interface GatepassRequestFormProps {
   onCancel: () => void;
 }
 
+const LUNCH_REASON = 'Lunch';
+
 const GatepassRequestForm: React.FC<GatepassRequestFormProps> = ({ onSubmit, onCancel }) => {
   const [selectedReason, setSelectedReason] = useState('');
-  const [otherReason, setOtherReason] = useState('');
+  const [reasonDescription, setReasonDescription] = useState('');
+  const [reasonDescriptionError, setReasonDescriptionError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { data: reasonRows = [] } = useGatepassReasons();
 
   const defaultReasons = ['Lunch', 'unit 2', 'visit to vendor', 'out'];
   const reasons = reasonRows.length ? reasonRows.map((reason) => reason.name) : defaultReasons;
-  const isOtherSelected = selectedReason === 'Other';
+  const shouldShowReasonDescription = !!selectedReason && selectedReason !== LUNCH_REASON;
+  const isReasonDescriptionMissing = shouldShowReasonDescription && !reasonDescription.trim();
+
+  const handleReasonChange = (value: string) => {
+    setSelectedReason(value);
+
+    if (value === LUNCH_REASON) {
+      setReasonDescription('');
+      setReasonDescriptionError('');
+      return;
+    }
+
+    if (reasonDescriptionError && reasonDescription.trim()) {
+      setReasonDescriptionError('');
+    }
+  };
+
+  const handleReasonDescriptionChange = (value: string) => {
+    setReasonDescription(value);
+    if (reasonDescriptionError && value.trim()) {
+      setReasonDescriptionError('');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const purpose = isOtherSelected ? otherReason.trim() : selectedReason.trim();
-    if (!purpose) {
+    if (!selectedReason.trim()) {
       toast({
         title: "Missing Information",
-        description: "Please select a purpose or enter another reason",
+        description: "Please select a purpose",
         variant: "destructive"
       });
       return;
     }
+
+    if (isReasonDescriptionMissing) {
+      setReasonDescriptionError('Please enter reason description');
+      return;
+    }
+
+    const purpose = shouldShowReasonDescription
+      ? `${selectedReason}: ${reasonDescription.trim()}`
+      : selectedReason.trim();
 
     setIsSubmitting(true);
 
@@ -53,7 +85,8 @@ const GatepassRequestForm: React.FC<GatepassRequestFormProps> = ({ onSubmit, onC
       
       // Reset form
       setSelectedReason('');
-      setOtherReason('');
+      setReasonDescription('');
+      setReasonDescriptionError('');
     } catch (error) {
       console.error('Error submitting gatepass:', error);
     } finally {
@@ -79,7 +112,7 @@ const GatepassRequestForm: React.FC<GatepassRequestFormProps> = ({ onSubmit, onC
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="purpose">Purpose *</Label>
-              <Select value={selectedReason} onValueChange={setSelectedReason}>
+              <Select value={selectedReason} onValueChange={handleReasonChange}>
                 <SelectTrigger id="purpose">
                   <SelectValue placeholder="Select reason" />
                 </SelectTrigger>
@@ -94,17 +127,26 @@ const GatepassRequestForm: React.FC<GatepassRequestFormProps> = ({ onSubmit, onC
               </Select>
             </div>
 
-            {isOtherSelected && (
+            {shouldShowReasonDescription && (
               <div className="space-y-2">
-                <Label htmlFor="other-reason">Other Reason *</Label>
+                <Label htmlFor="reason-description">Reason Description *</Label>
                 <Textarea
-                  id="other-reason"
-                  value={otherReason}
-                  onChange={(e) => setOtherReason(e.target.value)}
-                  placeholder="Write other reason"
+                  id="reason-description"
+                  value={reasonDescription}
+                  onChange={(e) => handleReasonDescriptionChange(e.target.value)}
+                  onBlur={() => {
+                    if (isReasonDescriptionMissing) {
+                      setReasonDescriptionError('Please enter reason description');
+                    }
+                  }}
+                  placeholder="Enter reason description"
                   required
+                  aria-invalid={!!reasonDescriptionError}
                   className="min-h-[90px] resize-none"
                 />
+                {reasonDescriptionError && (
+                  <p className="text-sm text-red-600">{reasonDescriptionError}</p>
+                )}
               </div>
             )}
 
@@ -121,7 +163,7 @@ const GatepassRequestForm: React.FC<GatepassRequestFormProps> = ({ onSubmit, onC
               <Button 
                 type="submit" 
                 className="flex-1 bg-green-600 hover:bg-green-700"
-                disabled={isSubmitting}
+                disabled={isSubmitting || !selectedReason || isReasonDescriptionMissing}
               >
                 {isSubmitting ? 'Submitting...' : 'Submit Request'}
               </Button>

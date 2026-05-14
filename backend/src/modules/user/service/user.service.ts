@@ -5,35 +5,40 @@ import type { User, CreateUserInput, UpdateUserInput, RoleOption, DepartmentOpti
 const SALT_ROUNDS = 10;
 
 const USER_SELECT = `
-  SELECT u.id, u.name, u.email, u.role, u.role_id,
+  SELECT u.id, u.name, u.email, r.name AS role, u.role_id,
          d.name AS department, u.department_id,
          u.manager_id, u.created_at, u.updated_at
   FROM users u
-  LEFT JOIN departments d ON d.department_id = u.department_id
+  JOIN roles r ON r.id = u.role_id
+  LEFT JOIN departments d ON d.id = u.department_id
 `;
 
 export const getAllUsers = async (): Promise<User[]> => {
-  const result = await getDb().query(`${USER_SELECT} ORDER BY u.role, u.name`);
+  const result = await getDb().query(`${USER_SELECT} ORDER BY r.name, u.name`);
   return result.rows as User[];
 };
 
 export const getDepartments = async (): Promise<DepartmentOption[]> => {
   const result = await getDb().query(
-    `SELECT department_id, name FROM departments ORDER BY name`,
+    `SELECT id AS department_id, name FROM departments ORDER BY name`,
   );
   return result.rows as DepartmentOption[];
 };
 
 export const getManagers = async (): Promise<Pick<User, 'id' | 'name'>[]> => {
   const result = await getDb().query(
-    `SELECT id, name FROM users WHERE role = 'manager' ORDER BY name`,
+    `SELECT u.id, u.name
+     FROM users u
+     JOIN roles r ON r.id = u.role_id
+     WHERE r.name = 'manager'
+     ORDER BY u.name`,
   );
   return result.rows as Pick<User, 'id' | 'name'>[];
 };
 
 export const getRoles = async (): Promise<RoleOption[]> => {
   const result = await getDb().query(
-    `SELECT role_id, name FROM roles
+    `SELECT id AS role_id, name FROM roles
      ORDER BY CASE name
        WHEN 'admin'      THEN 1
        WHEN 'manager'    THEN 2
@@ -62,19 +67,18 @@ export const createUser = async (input: CreateUserInput): Promise<User> => {
   const existing = await pool.query('SELECT id FROM users WHERE email = $1', [input.email]);
   if (existing.rows[0]) throw new Error('Email already in use');
 
-  const roleRow = await pool.query('SELECT role_id FROM roles WHERE name = $1', [input.role]);
+  const roleRow = await pool.query('SELECT id AS role_id FROM roles WHERE name = $1', [input.role]);
   if (!roleRow.rows[0]) throw new Error('Invalid role');
-  const roleId: number = roleRow.rows[0].role_id;
+  const roleId: string = roleRow.rows[0].role_id;
 
   const hashed = await bcrypt.hash(input.password, SALT_ROUNDS);
 
   const inserted = await pool.query(
     `INSERT INTO users
-       (name, email, password, role, role_id, department_id, manager_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (name, email, password, role_id, department_id, manager_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id`,
-    [input.name, input.email, hashed, input.role, roleId,
-     input.department_id ?? null, input.manager_id ?? null],
+    [input.name, input.email, hashed, roleId, input.department_id ?? null, input.manager_id ?? null],
   );
 
   return getUserById(inserted.rows[0].id);
@@ -87,7 +91,7 @@ export const updateUser = async (id: string, input: UpdateUserInput): Promise<Us
   const extra: Record<string, unknown> = {};
 
   if (input.role) {
-    const roleRow = await pool.query('SELECT role_id FROM roles WHERE name = $1', [input.role]);
+    const roleRow = await pool.query('SELECT id AS role_id FROM roles WHERE name = $1', [input.role]);
     if (!roleRow.rows[0]) throw new Error('Invalid role');
     extra.role_id = roleRow.rows[0].role_id;
   }
