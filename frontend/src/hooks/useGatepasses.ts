@@ -29,7 +29,6 @@ export interface GatepassApprovalRequest {
 
 export interface Gatepass {
   id: string;
-  gatepass_id: string;
   user_id: string;
   reason_id: string;
   reason_name: string;

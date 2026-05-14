@@ -42,7 +42,7 @@ const SecurityDashboard = () => {
   // Filter gatepasses based on search term
   const filteredGatepasses = gatepasses.filter((gatepass) =>
     gatepass.profiles?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    gatepass.gatepass_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    gatepass.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
     formatGatepassReason(gatepass).toLowerCase().includes(searchTerm.toLowerCase())
   );
 

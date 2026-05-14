@@ -63,6 +63,17 @@ export const getDailyLunchReport = async (req: AuthRequest, res: Response): Prom
   }
 };
 
+export const getLunchAnalyticsRangeReport = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+    const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : undefined;
+    sendSuccess(res, await GatepassService.getLunchAnalyticsRangeReport(startDate, endDate, employeeId));
+  } catch (err) {
+    sendError(res, (err as Error).message, 500);
+  }
+};
+
 export const getMonthlyLunchReport = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const month = typeof req.query.month === 'string' ? req.query.month : undefined;
@@ -78,6 +89,19 @@ export const getYearlyLunchReport = async (req: AuthRequest, res: Response): Pro
     const year = typeof req.query.year === 'string' ? req.query.year : undefined;
     const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : undefined;
     sendSuccess(res, await GatepassService.getYearlyLunchReport(year, employeeId));
+  } catch (err) {
+    sendError(res, (err as Error).message, 500);
+  }
+};
+
+export const getLunchEmployeeDetailReport = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+    const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    sendSuccess(
+      res,
+      await GatepassService.getLunchEmployeeDetailReport(req.params.userId, startDate, endDate),
+    );
   } catch (err) {
     sendError(res, (err as Error).message, 500);
   }

@@ -114,7 +114,7 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
         <div className="space-y-6">
           {/* Gatepass ID */}
           <div className="bg-gray-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-lg text-gray-800">{gatepass.gatepass_id || gatepass.id}</h3>
+            <h3 className="font-semibold text-lg text-gray-800 break-all">{gatepass.id}</h3>
             <p className="text-sm text-gray-500">Gatepass ID</p>
           </div>
 

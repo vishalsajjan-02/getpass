@@ -31,7 +31,6 @@ export interface UserWithPassword extends User {
 
 export interface Gatepass {
   id: string;
-  gatepass_id: string;
   user_id: string;
   reason_id: string;
   reason_name: string;
@@ -103,10 +102,13 @@ export interface GatepassStats {
 }
 
 export interface LunchEntryReport {
-  gatepass_id: string;
+  id: string;
   date: string;
+  reason_name: string;
+  current_status: EmployeeLiveStatus;
   checked_out_at?: string;
   checked_in_at?: string;
+  total_outside_office_minutes: number;
   lunch_duration_minutes: number;
   extra_lunch_minutes: number;
 }
@@ -151,6 +153,15 @@ export interface MonthlyLunchReport {
   top_employees: LunchEmployeeSummary[];
 }
 
+export interface LunchAnalyticsRangeReport {
+  start_date: string;
+  end_date: string;
+  allowed_lunch_minutes: number;
+  employees: LunchEmployeeSummary[];
+  total_violations: number;
+  top_employees: LunchEmployeeSummary[];
+}
+
 export interface YearlyLunchMonthSummary {
   month: string;
   total_extra_lunch_minutes: number;
@@ -164,6 +175,37 @@ export interface YearlyLunchReport {
   months: YearlyLunchMonthSummary[];
   total_violations: number;
   top_employees: LunchEmployeeSummary[];
+}
+
+export interface LunchActivityLog {
+  id: string;
+  date: string;
+  reason_name: string;
+  reason_description?: string;
+  status: GatepassStatus;
+  checked_out_at?: string;
+  checked_in_at?: string;
+  total_outside_office_minutes: number;
+  lunch_duration_minutes: number;
+  extra_lunch_minutes: number;
+  violation: boolean;
+}
+
+export interface LunchEmployeeDetailReport {
+  user_id: string;
+  employee_name: string;
+  department?: string;
+  start_date: string;
+  end_date: string;
+  current_status: EmployeeLiveStatus;
+  checked_out_at?: string;
+  checked_in_at?: string;
+  total_lunch_duration_minutes: number;
+  total_extra_lunch_minutes: number;
+  total_outside_office_minutes: number;
+  violation_count: number;
+  lunch_entries: LunchEntryReport[];
+  activity_logs: LunchActivityLog[];
 }
 
 export interface AuthPayload {

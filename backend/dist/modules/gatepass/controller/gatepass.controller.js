@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.remove = exports.updateStatus = exports.create = exports.getOne = exports.getLiveEmployeeStatuses = exports.getYearlyLunchReport = exports.getMonthlyLunchReport = exports.getDailyLunchReport = exports.getReasons = exports.getStats = exports.search = exports.getToday = exports.getAll = void 0;
+exports.remove = exports.updateStatus = exports.create = exports.getOne = exports.getLiveEmployeeStatuses = exports.getLunchEmployeeDetailReport = exports.getYearlyLunchReport = exports.getMonthlyLunchReport = exports.getLunchAnalyticsRangeReport = exports.getDailyLunchReport = exports.getReasons = exports.getStats = exports.search = exports.getToday = exports.getAll = void 0;
 const GatepassService = __importStar(require("../service"));
 const response_utils_1 = require("../../../utils/response.utils");
 const getAll = async (req, res) => {
@@ -101,6 +101,18 @@ const getDailyLunchReport = async (req, res) => {
     }
 };
 exports.getDailyLunchReport = getDailyLunchReport;
+const getLunchAnalyticsRangeReport = async (req, res) => {
+    try {
+        const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+        const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+        const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : undefined;
+        (0, response_utils_1.sendSuccess)(res, await GatepassService.getLunchAnalyticsRangeReport(startDate, endDate, employeeId));
+    }
+    catch (err) {
+        (0, response_utils_1.sendError)(res, err.message, 500);
+    }
+};
+exports.getLunchAnalyticsRangeReport = getLunchAnalyticsRangeReport;
 const getMonthlyLunchReport = async (req, res) => {
     try {
         const month = typeof req.query.month === 'string' ? req.query.month : undefined;
@@ -123,6 +135,17 @@ const getYearlyLunchReport = async (req, res) => {
     }
 };
 exports.getYearlyLunchReport = getYearlyLunchReport;
+const getLunchEmployeeDetailReport = async (req, res) => {
+    try {
+        const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+        const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+        (0, response_utils_1.sendSuccess)(res, await GatepassService.getLunchEmployeeDetailReport(req.params.userId, startDate, endDate));
+    }
+    catch (err) {
+        (0, response_utils_1.sendError)(res, err.message, 500);
+    }
+};
+exports.getLunchEmployeeDetailReport = getLunchEmployeeDetailReport;
 const getLiveEmployeeStatuses = async (req, res) => {
     try {
         const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : undefined;

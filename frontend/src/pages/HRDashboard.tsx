@@ -181,7 +181,7 @@ const HRDashboard = () => {
       search.length === 0 ||
       request.profiles?.name?.toLowerCase().includes(search) ||
       formatGatepassReason(request).toLowerCase().includes(search) ||
-      request.gatepass_id?.toLowerCase().includes(search) ||
+      request.id.toLowerCase().includes(search) ||
       request.profiles?.department?.toLowerCase().includes(search);
 
     const matchesStatus =
@@ -291,7 +291,7 @@ const HRDashboard = () => {
                     </div>
                     <div>
                       <p className="font-semibold text-gray-800">{request.profiles?.name || 'Unknown User'}</p>
-                      <p className="text-sm text-gray-500">{formatGatepassReason(request)} • {request.gatepass_id}</p>
+                      <p className="text-sm text-gray-500">{formatGatepassReason(request)} • {request.id}</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-4">
@@ -433,7 +433,7 @@ const HRDashboard = () => {
                       <h3 className="font-semibold text-gray-900 shrink-0">{request.profiles?.name || 'Unknown User'}</h3>
                       <p className="text-gray-600 truncate">{formatGatepassReason(request)}</p>
                       <p className="text-sm text-gray-500 truncate">
-                        {request.gatepass_id} • {request.profiles?.department || 'No Department'}
+                        {request.id} • {request.profiles?.department || 'No Department'}
                       </p>
                     </div>
                   </div>

@@ -13,6 +13,9 @@ import type {
   GatepassStatus,
   GatepassWithProfile,
   LiveEmployeeStatusReport,
+  LunchActivityLog,
+  LunchAnalyticsRangeReport,
+  LunchEmployeeDetailReport,
   LunchEmployeeSummary,
   LunchEntryReport,
   MonthlyLunchReport,
@@ -41,10 +44,13 @@ type LunchEntryRow = {
   user_id: string;
   employee_name: string;
   department?: string;
-  gatepass_id: string;
+  id: string;
   date: string;
+  reason_name: string;
+  status: GatepassStatus;
   checked_out_at?: string;
   checked_in_at?: string;
+  total_minutes_outside: number;
 };
 
 const optionalString = (value: unknown): string | undefined => {
@@ -60,7 +66,6 @@ const toApprovalRequests = (value: unknown): GatepassApprovalRequest[] => {
 
 const rowToGatepass = (row: Record<string, unknown>): Gatepass => ({
   id: String(row.id),
-  gatepass_id: String(row.gatepass_id),
   user_id: String(row.user_id),
   reason_id: String(row.reason_id),
   reason_name: String(row.reason_name),
@@ -97,7 +102,6 @@ const withProfile = (row: Record<string, unknown>): GatepassWithProfile => ({
 const BASE_QUERY = `
   SELECT
     g.id,
-    g.gatepass_id,
     g.user_id,
     g.reason_id,
     gr.name AS reason_name,
@@ -324,13 +328,6 @@ const calculateWorkingMinutesOutside = (checkedOutAt: Date, checkedInAt: Date): 
   return Math.max(totalMinutes, 0);
 };
 
-const generateGatepassId = (): string => {
-  const d = new Date();
-  const dateStr = d.toISOString().slice(2, 10).replace(/-/g, '');
-  const seq = String(Math.floor(Math.random() * 999) + 1).padStart(3, '0');
-  return `GP${dateStr}${seq}`;
-};
-
 const emitRealtimeUpdate = (
   gatepass: GatepassWithProfile,
   eventName?: 'gatepass:new-request' | 'gatepass:approved' | 'gatepass:rejected' | 'gatepass:out' | 'gatepass:in',
@@ -395,6 +392,20 @@ const parseYearParam = (value?: string): { year: number; startDate: string; endD
     startDate: start.toISOString().slice(0, 10),
     endDate: end.toISOString().slice(0, 10),
   };
+};
+
+const normalizeDateRange = (
+  startDateParam?: string,
+  endDateParam?: string,
+): { startDate: string; endDate: string } => {
+  const now = new Date();
+  const fallback = now.toISOString().slice(0, 10);
+  const startDate = parseDateParam(startDateParam, now);
+  const endDate = parseDateParam(endDateParam, now);
+
+  return startDate <= endDate
+    ? { startDate, endDate }
+    : { startDate: endDate || fallback, endDate: startDate || fallback };
 };
 
 const getLiveEmployeeStatusesInternal = async (
@@ -481,19 +492,26 @@ const getLunchEntriesInRange = async (
        u.id AS user_id,
        u.name AS employee_name,
        d.name AS department,
-       g.gatepass_id,
+       g.id,
        g.date,
+       gr.name AS reason_name,
+       g.status,
        g.checked_out_at,
-       g.checked_in_at
+       g.checked_in_at,
+       g.total_minutes_outside
      FROM gatepasses g
      JOIN gatepass_reasons gr ON gr.id = g.reason_id
      JOIN users u ON u.id = g.user_id
      JOIN roles r ON r.id = u.role_id
      LEFT JOIN departments d ON d.id = u.department_id
-     WHERE LOWER(gr.name) = '${LUNCH_REASON_NAME}'
-       AND g.date BETWEEN $1 AND $2
+     WHERE g.date BETWEEN $1 AND $2
        AND r.name IN ('employee', 'manager')
-       AND (g.checked_out_at IS NOT NULL OR g.checked_in_at IS NOT NULL OR g.status IN ('active', 'completed'))
+       AND (
+         g.checked_out_at IS NOT NULL
+         OR g.checked_in_at IS NOT NULL
+         OR g.total_minutes_outside > 0
+         OR g.status IN ('active', 'completed')
+       )
        ${employeeFilter}
      ORDER BY u.name, g.date DESC, g.checked_out_at DESC NULLS LAST, g.created_at DESC`,
     params,
@@ -503,11 +521,70 @@ const getLunchEntriesInRange = async (
     user_id: String(row.user_id),
     employee_name: String(row.employee_name),
     department: optionalString(row.department),
-    gatepass_id: String(row.gatepass_id),
+    id: String(row.id),
     date: String(row.date),
+    reason_name: String(row.reason_name),
+    status: row.status as GatepassStatus,
     checked_out_at: optionalString(row.checked_out_at),
     checked_in_at: optionalString(row.checked_in_at),
+    total_minutes_outside: Number(row.total_minutes_outside ?? 0),
   }));
+};
+
+const getEmployeeActivityLogsInRange = async (
+  db: Queryable,
+  userId: string,
+  startDate: string,
+  endDate: string,
+): Promise<LunchActivityLog[]> => {
+  const result = await db.query(
+    `SELECT
+       g.id,
+       g.date,
+       gr.name AS reason_name,
+       g.reason_description,
+       g.status,
+       g.checked_out_at,
+       g.checked_in_at,
+       g.total_minutes_outside
+     FROM gatepasses g
+     JOIN gatepass_reasons gr ON gr.id = g.reason_id
+     WHERE g.user_id = $1
+       AND g.date BETWEEN $2 AND $3
+       AND (
+         g.checked_out_at IS NOT NULL
+         OR g.checked_in_at IS NOT NULL
+         OR g.total_minutes_outside > 0
+       )
+     ORDER BY g.date DESC, g.checked_out_at DESC NULLS LAST, g.created_at DESC`,
+    [userId, startDate, endDate],
+  );
+
+  return result.rows.map((row) => {
+    const reasonName = String(row.reason_name);
+    const checkedOutAt = optionalString(row.checked_out_at);
+    const checkedInAt = optionalString(row.checked_in_at);
+    const lunchDurationMinutes = reasonName.toLowerCase() === LUNCH_REASON_NAME
+      ? calculateMinutesBetween(checkedOutAt, checkedInAt, new Date())
+      : 0;
+    const extraLunchMinutes = reasonName.toLowerCase() === LUNCH_REASON_NAME
+      ? calculateExtraLunchMinutes(lunchDurationMinutes)
+      : 0;
+
+    return {
+      id: String(row.id),
+      date: String(row.date),
+      reason_name: reasonName,
+      reason_description: optionalString(row.reason_description),
+      status: row.status as GatepassStatus,
+      checked_out_at: checkedOutAt,
+      checked_in_at: checkedInAt,
+      total_outside_office_minutes: Number(row.total_minutes_outside ?? 0),
+      lunch_duration_minutes: lunchDurationMinutes,
+      extra_lunch_minutes: extraLunchMinutes,
+      violation: extraLunchMinutes > 0,
+    } satisfies LunchActivityLog;
+  });
 };
 
 const buildLunchEmployeeSummaries = (
@@ -532,13 +609,23 @@ const buildLunchEmployeeSummaries = (
   }
 
   for (const entry of entries) {
-    const durationMinutes = calculateMinutesBetween(entry.checked_out_at, entry.checked_in_at, new Date());
-    const extraLunchMinutes = calculateExtraLunchMinutes(durationMinutes);
+    const isLunchEntry = entry.reason_name.trim().toLowerCase() === LUNCH_REASON_NAME;
+    const durationMinutes = isLunchEntry
+      ? calculateMinutesBetween(entry.checked_out_at, entry.checked_in_at, new Date())
+      : 0;
+    const extraLunchMinutes = isLunchEntry ? calculateExtraLunchMinutes(durationMinutes) : 0;
+    const entryCurrentStatus: EmployeeLiveStatus =
+      entry.checked_out_at && !entry.checked_in_at
+        ? (isLunchEntry ? 'On Lunch' : 'Outside Office')
+        : 'In Office';
     const lunchEntry: LunchEntryReport = {
-      gatepass_id: entry.gatepass_id,
+      id: entry.id,
       date: entry.date,
+      reason_name: entry.reason_name,
+      current_status: entryCurrentStatus,
       checked_out_at: entry.checked_out_at,
       checked_in_at: entry.checked_in_at,
+      total_outside_office_minutes: entry.total_minutes_outside,
       lunch_duration_minutes: durationMinutes,
       extra_lunch_minutes: extraLunchMinutes,
     };
@@ -557,9 +644,11 @@ const buildLunchEmployeeSummaries = (
     };
 
     existing.entries.push(lunchEntry);
-    existing.total_lunch_duration_minutes += durationMinutes;
-    existing.total_extra_lunch_minutes += extraLunchMinutes;
-    existing.violation_count += extraLunchMinutes > 0 ? 1 : 0;
+    if (isLunchEntry) {
+      existing.total_lunch_duration_minutes += durationMinutes;
+      existing.total_extra_lunch_minutes += extraLunchMinutes;
+      existing.violation_count += extraLunchMinutes > 0 ? 1 : 0;
+    }
 
     const currentCheckedOutAt = parseTimestamp(existing.checked_out_at);
     const nextCheckedOutAt = parseTimestamp(entry.checked_out_at);
@@ -584,6 +673,29 @@ const getTopLunchViolators = (employees: LunchEmployeeSummary[]): LunchEmployeeS
       return right.violation_count - left.violation_count;
     })
     .slice(0, 5);
+
+const filterEmployeesWithHistory = (employees: LunchEmployeeSummary[]): LunchEmployeeSummary[] =>
+  employees.filter((employee) => employee.entries.length > 0);
+
+const buildLunchAnalyticsRangeReport = async (
+  startDate: string,
+  endDate: string,
+  employeeId?: string,
+): Promise<LunchAnalyticsRangeReport> => {
+  const liveStatuses = await getLiveEmployeeStatusesInternal(getDb(), employeeId);
+  const entries = await getLunchEntriesInRange(getDb(), startDate, endDate, employeeId);
+  const employees = filterEmployeesWithHistory(buildLunchEmployeeSummaries(liveStatuses, entries));
+  const totalViolations = employees.reduce((total, employee) => total + employee.violation_count, 0);
+
+  return {
+    start_date: startDate,
+    end_date: endDate,
+    allowed_lunch_minutes: LUNCH_LIMIT_MINUTES,
+    employees,
+    total_violations: totalViolations,
+    top_employees: getTopLunchViolators(employees),
+  };
+};
 
 export const getGatepassReasons = async (): Promise<GatepassReason[]> => {
   const result = await getDb().query(
@@ -629,7 +741,7 @@ export const searchGatepasses = async (
       OR COALESCE(g.reason_description, '') ILIKE $2
       OR COALESCE(g.destination, '') ILIKE $3
       OR COALESCE(u.name, '') ILIKE $4
-      OR g.gatepass_id ILIKE $5)`,
+      OR g.id::text ILIKE $5)`,
   ];
   const params: unknown[] = [like, like, like, like, like];
   const visibility = buildVisibilityClause(role, userId, params.length + 1);
@@ -731,21 +843,64 @@ export const getGatepassStats = async (userId: string, role: UserRole): Promise<
 export const getLiveEmployeeStatuses = async (employeeId?: string): Promise<LiveEmployeeStatusReport[]> =>
   getLiveEmployeeStatusesInternal(getDb(), employeeId);
 
+export const getLunchAnalyticsRangeReport = async (
+  startDateParam?: string,
+  endDateParam?: string,
+  employeeId?: string,
+): Promise<LunchAnalyticsRangeReport> => {
+  const { startDate, endDate } = normalizeDateRange(startDateParam, endDateParam);
+  return buildLunchAnalyticsRangeReport(startDate, endDate, employeeId);
+};
+
+export const getLunchEmployeeDetailReport = async (
+  userId: string,
+  startDateParam?: string,
+  endDateParam?: string,
+): Promise<LunchEmployeeDetailReport> => {
+  const { startDate, endDate } = normalizeDateRange(startDateParam, endDateParam);
+  const rangeReport = await buildLunchAnalyticsRangeReport(startDate, endDate, userId);
+  const liveStatuses = await getLiveEmployeeStatusesInternal(getDb(), userId);
+  const liveStatus = liveStatuses[0];
+  const employeeSummary = rangeReport.employees[0];
+  const activityLogs = await getEmployeeActivityLogsInRange(getDb(), userId, startDate, endDate);
+
+  if (!employeeSummary && !liveStatus) {
+    throw new Error('Employee lunch history not found');
+  }
+
+  return {
+    user_id: userId,
+    employee_name: employeeSummary?.employee_name ?? liveStatus?.employee_name ?? 'Unknown Employee',
+    department: employeeSummary?.department ?? liveStatus?.department,
+    start_date: startDate,
+    end_date: endDate,
+    current_status: employeeSummary?.current_status ?? liveStatus?.current_status ?? 'In Office',
+    checked_out_at: employeeSummary?.checked_out_at ?? liveStatus?.checked_out_at,
+    checked_in_at: employeeSummary?.checked_in_at ?? liveStatus?.checked_in_at,
+    total_lunch_duration_minutes: employeeSummary?.total_lunch_duration_minutes ?? 0,
+    total_extra_lunch_minutes: employeeSummary?.total_extra_lunch_minutes ?? 0,
+    total_outside_office_minutes: activityLogs.reduce(
+      (total, log) => total + log.total_outside_office_minutes,
+      0,
+    ),
+    violation_count: employeeSummary?.violation_count ?? 0,
+    lunch_entries: employeeSummary?.entries.filter((entry) => entry.reason_name.toLowerCase() === LUNCH_REASON_NAME) ?? [],
+    activity_logs: activityLogs,
+  };
+};
+
 export const getDailyLunchReport = async (
   dateParam?: string,
   employeeId?: string,
 ): Promise<DailyLunchReport> => {
   const date = parseDateParam(dateParam, new Date());
-  const liveStatuses = await getLiveEmployeeStatusesInternal(getDb(), employeeId);
-  const entries = await getLunchEntriesInRange(getDb(), date, date, employeeId);
-  const employees = buildLunchEmployeeSummaries(liveStatuses, entries);
-  const totalViolations = employees.reduce((total, employee) => total + employee.violation_count, 0);
+  const rangeReport = await buildLunchAnalyticsRangeReport(date, date, employeeId);
 
   return {
     date,
-    allowed_lunch_minutes: LUNCH_LIMIT_MINUTES,
-    employees,
-    total_violations: totalViolations,
+    allowed_lunch_minutes: rangeReport.allowed_lunch_minutes,
+    employees: rangeReport.employees,
+    total_violations: rangeReport.total_violations,
   };
 };
 
@@ -754,17 +909,14 @@ export const getMonthlyLunchReport = async (
   employeeId?: string,
 ): Promise<MonthlyLunchReport> => {
   const { monthLabel, startDate, endDate } = parseMonthParam(monthParam);
-  const liveStatuses = await getLiveEmployeeStatusesInternal(getDb(), employeeId);
-  const entries = await getLunchEntriesInRange(getDb(), startDate, endDate, employeeId);
-  const employees = buildLunchEmployeeSummaries(liveStatuses, entries);
-  const totalViolations = employees.reduce((total, employee) => total + employee.violation_count, 0);
+  const rangeReport = await buildLunchAnalyticsRangeReport(startDate, endDate, employeeId);
 
   return {
     month: monthLabel,
-    allowed_lunch_minutes: LUNCH_LIMIT_MINUTES,
-    employees,
-    total_violations: totalViolations,
-    top_employees: getTopLunchViolators(employees),
+    allowed_lunch_minutes: rangeReport.allowed_lunch_minutes,
+    employees: rangeReport.employees,
+    total_violations: rangeReport.total_violations,
+    top_employees: rangeReport.top_employees,
   };
 };
 
@@ -775,7 +927,7 @@ export const getYearlyLunchReport = async (
   const { year, startDate, endDate } = parseYearParam(yearParam);
   const liveStatuses = await getLiveEmployeeStatusesInternal(getDb(), employeeId);
   const entries = await getLunchEntriesInRange(getDb(), startDate, endDate, employeeId);
-  const employees = buildLunchEmployeeSummaries(liveStatuses, entries);
+  const employees = filterEmployeesWithHistory(buildLunchEmployeeSummaries(liveStatuses, entries));
   const monthMap = new Map<string, YearlyLunchMonthSummary>();
 
   for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
@@ -788,6 +940,10 @@ export const getYearlyLunchReport = async (
   }
 
   for (const entry of entries) {
+    if (entry.reason_name.trim().toLowerCase() !== LUNCH_REASON_NAME) {
+      continue;
+    }
+
     const checkedOutAt = parseTimestamp(entry.checked_out_at);
     const monthLabel = checkedOutAt
       ? `${checkedOutAt.getFullYear()}-${String(checkedOutAt.getMonth() + 1).padStart(2, '0')}`
@@ -848,12 +1004,10 @@ export const createGatepass = async (userId: string, input: CreateGatepassInput)
     }
 
     const adminUserId = await getPrimaryAdminId(client);
-    const gatepassId = generateGatepassId();
     const requestDate = input.date ?? new Date().toISOString().slice(0, 10);
 
     const inserted = await client.query(
       `INSERT INTO gatepasses (
-         gatepass_id,
          user_id,
          reason_id,
          reason_description,
@@ -863,10 +1017,9 @@ export const createGatepass = async (userId: string, input: CreateGatepassInput)
          approval_flow,
          is_emergency
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
       [
-        gatepassId,
         userId,
         reason.id,
         reasonDescription ?? null,

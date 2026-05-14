@@ -43,7 +43,7 @@ const GatepassCard: React.FC<GatepassCardProps> = ({ gatepass, onViewDetails, ge
                     </Badge>
                   )}
                 </div>
-                <p className="text-gray-600 font-medium">{gatepass.gatepass_id}</p>
+                <p className="text-gray-600 font-medium break-all">{gatepass.id}</p>
                 <p className="text-sm text-gray-500 mb-2">{gatepass.destination || 'No destination specified'}</p>
                 
                 <div className="grid grid-cols-2 gap-4 mt-3 text-sm">

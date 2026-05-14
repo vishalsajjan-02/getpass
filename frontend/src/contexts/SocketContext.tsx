@@ -32,8 +32,10 @@ const invalidateGatepassQueries = (queryClient: ReturnType<typeof useQueryClient
         'gatepasses-search',
         'gatepass-stats',
         'lunch-daily-report',
+        'lunch-range-report',
         'lunch-monthly-report',
         'lunch-yearly-report',
+        'lunch-employee-detail',
         'live-employee-status',
       ].includes(rootKey);
     },
