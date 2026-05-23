@@ -167,9 +167,9 @@ const GatepassRequestForm: React.FC<GatepassRequestFormProps> = ({ onSubmit, onC
               >
                 Cancel
               </Button>
-              <Button 
-                type="submit" 
-                className="flex-1 bg-green-600 hover:bg-green-700"
+              <Button
+                type="submit"
+                className="flex-1 bg-gradient-to-r from-orange-500 to-rose-500 text-white hover:from-orange-600 hover:to-rose-600"
                 disabled={isSubmitting || !selectedReasonId || isReasonDescriptionMissing}
               >
                 {isSubmitting ? 'Submitting...' : 'Submit Request'}

@@ -205,6 +205,18 @@ const getPendingApprovalForActor = async (db, gatepassId, actorUserId, approverR
         throw new Error(`No ${approverRole} approval request found for this gatepass`);
     return row;
 };
+const getApprovalRequestByStep = async (db, gatepassId, step) => {
+    const result = await db.query(`SELECT id, gatepass_id, approver_user_id, approver_role, step, status,
+            remarks, acted_at, created_at, updated_at
+     FROM gatepass_approval_requests
+     WHERE gatepass_id = $1
+       AND step = $2
+     LIMIT 1`, [gatepassId, step]);
+    const row = result.rows[0];
+    if (!row)
+        throw new Error(`No approval request found for step ${step}`);
+    return row;
+};
 const cancelPendingApprovalRequests = async (db, gatepassId, remarks) => {
     await db.query(`UPDATE gatepass_approval_requests
      SET status = 'cancelled',
@@ -862,9 +874,14 @@ const updateGatepassStatus = async (id, input, actorUserId, actorRole) => {
                updated_at = NOW()
            WHERE id = $1`, [approvalRequest.id, input.remarks ?? 'Approved by manager', nowIso]);
                 await client.query(`UPDATE gatepasses
-           SET status = 'pending_admin_approval',
+           SET status = $2,
                updated_at = NOW()
-           WHERE id = $1`, [id]);
+           WHERE id = $1`, [
+                    id,
+                    (await getApprovalRequestByStep(client, id, 2)).status === 'approved'
+                        ? 'approved'
+                        : 'pending_admin_approval',
+                ]);
             }
             else {
                 await client.query(`UPDATE gatepass_approval_requests
@@ -882,34 +899,84 @@ const updateGatepassStatus = async (id, input, actorUserId, actorRole) => {
             }
         }
         else if (actorRole === 'admin' && (input.status === 'approved' || input.status === 'rejected')) {
-            const approvalRequest = await getPendingApprovalForActor(client, id, actorUserId, 'admin');
-            if (gatepass.status !== 'pending_admin_approval' || approvalRequest.status !== 'pending') {
-                throw new Error('This gatepass is not awaiting admin approval');
-            }
-            if (input.status === 'approved') {
-                await client.query(`UPDATE gatepass_approval_requests
-           SET status = 'approved',
-               remarks = $2,
-               acted_at = $3,
-               updated_at = NOW()
-           WHERE id = $1`, [approvalRequest.id, input.remarks ?? 'Approved by admin', nowIso]);
-                await client.query(`UPDATE gatepasses
-           SET status = 'approved',
-               updated_at = NOW()
-           WHERE id = $1`, [id]);
+            const requestedStep = input.approval_step ?? 2;
+            if (requestedStep === 1) {
+                if (gatepass.approval_flow !== 'manager_then_admin') {
+                    throw new Error('Manager approval step is only available for Out requests');
+                }
+                if (gatepass.status !== 'pending_manager_approval') {
+                    throw new Error('This gatepass is not awaiting manager approval');
+                }
+                const managerApprovalRequest = await getApprovalRequestByStep(client, id, 1);
+                if (managerApprovalRequest.status !== 'pending') {
+                    throw new Error('The manager approval step has already been processed');
+                }
+                if (input.status === 'approved') {
+                    await client.query(`UPDATE gatepass_approval_requests
+             SET status = 'approved',
+                 remarks = $2,
+                 acted_at = $3,
+                 updated_at = NOW()
+             WHERE id = $1`, [managerApprovalRequest.id, input.remarks ?? 'Approved by admin for manager step', nowIso]);
+                    await client.query(`UPDATE gatepasses
+             SET status = $2,
+                 updated_at = NOW()
+             WHERE id = $1`, [
+                        id,
+                        (await getApprovalRequestByStep(client, id, 2)).status === 'approved'
+                            ? 'approved'
+                            : 'pending_admin_approval',
+                    ]);
+                }
+                else {
+                    await client.query(`UPDATE gatepass_approval_requests
+             SET status = 'rejected',
+                 remarks = $2,
+                 acted_at = $3,
+                 updated_at = NOW()
+             WHERE id = $1`, [managerApprovalRequest.id, rejectReason, nowIso]);
+                    await client.query(`UPDATE gatepasses
+             SET status = 'rejected',
+                 rejection_reason = $2,
+                 updated_at = NOW()
+             WHERE id = $1`, [id, rejectReason]);
+                    await cancelPendingApprovalRequests(client, id, 'Cancelled after admin rejected the manager step');
+                }
             }
             else {
-                await client.query(`UPDATE gatepass_approval_requests
-           SET status = 'rejected',
-               remarks = $2,
-               acted_at = $3,
-               updated_at = NOW()
-           WHERE id = $1`, [approvalRequest.id, rejectReason, nowIso]);
-                await client.query(`UPDATE gatepasses
-           SET status = 'rejected',
-               rejection_reason = $2,
-               updated_at = NOW()
-           WHERE id = $1`, [id, rejectReason]);
+                const approvalRequest = await getPendingApprovalForActor(client, id, actorUserId, 'admin');
+                if (!['pending_admin_approval', 'pending_manager_approval'].includes(gatepass.status)
+                    || approvalRequest.status !== 'pending') {
+                    throw new Error('This gatepass is not awaiting admin approval');
+                }
+                if (input.status === 'approved') {
+                    await client.query(`UPDATE gatepass_approval_requests
+             SET status = 'approved',
+                 remarks = $2,
+                 acted_at = $3,
+                 updated_at = NOW()
+             WHERE id = $1`, [approvalRequest.id, input.remarks ?? 'Approved by admin', nowIso]);
+                    const managerApprovalPending = gatepass.approval_flow === 'manager_then_admin'
+                        && (await getApprovalRequestByStep(client, id, 1)).status === 'pending';
+                    await client.query(`UPDATE gatepasses
+             SET status = $2,
+                 updated_at = NOW()
+             WHERE id = $1`, [id, managerApprovalPending ? 'pending_manager_approval' : 'approved']);
+                }
+                else {
+                    await client.query(`UPDATE gatepass_approval_requests
+             SET status = 'rejected',
+                 remarks = $2,
+                 acted_at = $3,
+                 updated_at = NOW()
+             WHERE id = $1`, [approvalRequest.id, rejectReason, nowIso]);
+                    await client.query(`UPDATE gatepasses
+             SET status = 'rejected',
+                 rejection_reason = $2,
+                 updated_at = NOW()
+             WHERE id = $1`, [id, rejectReason]);
+                    await cancelPendingApprovalRequests(client, id, 'Cancelled after admin rejection');
+                }
             }
         }
         else if (actorRole === 'gatekeeper' && input.status === 'active') {

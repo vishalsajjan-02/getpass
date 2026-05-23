@@ -219,5 +219,6 @@ export interface UpdateGatepassStatusInput {
     status: GatepassStatus;
     rejection_reason?: string;
     remarks?: string;
+    approval_step?: 1 | 2;
 }
 //# sourceMappingURL=index.d.ts.map

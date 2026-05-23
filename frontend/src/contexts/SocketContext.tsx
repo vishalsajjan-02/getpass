@@ -61,7 +61,10 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       path: '/socket.io',
       auth: { token },
       withCredentials: true,
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
     });
 
     const handleGatepassEvent = () => {
@@ -69,7 +72,9 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     const handleConnectError = (error: Error) => {
-      console.error('Socket connection error:', error.message);
+      if (import.meta.env.DEV) {
+        console.warn('Socket reconnecting:', error.message);
+      }
     };
 
     GATEPASS_EVENTS.forEach((eventName) => {
@@ -84,7 +89,11 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         nextSocket.off(eventName, handleGatepassEvent);
       });
       nextSocket.off('connect_error', handleConnectError);
-      nextSocket.disconnect();
+      if (nextSocket.connected) {
+        nextSocket.disconnect();
+      } else {
+        nextSocket.close();
+      }
       setSocket(null);
     };
   }, [queryClient, user]);

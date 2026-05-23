@@ -5,16 +5,18 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { User } from 'lucide-react';
 import { useMockAuth } from '@/contexts/MockAuthContext';
+import DashboardBanner from '@/components/DashboardBanner';
 
 const EmployeeProfile = () => {
   const { user } = useMockAuth();
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="bg-gradient-to-r from-orange-400 via-orange-500 to-rose-500 rounded-xl px-5 py-4 text-white shadow-xl">
-        <h2 className="text-2xl md:text-3xl font-bold">Employee Profile</h2>
-        <p className="text-white/90 text-sm md:text-base leading-tight">Manage your personal information and settings.</p>
-      </div>
+      <DashboardBanner
+        title="Employee Profile"
+        description="Manage your personal information and settings."
+        icon={<User className="h-7 w-7 text-white" />}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Profile Image Card */}
@@ -68,7 +70,7 @@ const EmployeeProfile = () => {
                 <Label htmlFor="employee-id" className="text-gray-700 font-medium">Employee ID</Label>
                 <Input
                   id="employee-id"
-                  value={user?.employee_id || 'Not assigned'}
+                  value={user?.id || 'Not assigned'}
                   disabled
                   className="bg-gray-50 border-gray-200"
                 />

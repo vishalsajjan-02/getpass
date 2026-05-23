@@ -13,6 +13,7 @@ export type GatepassStatus =
   | 'completed';
 
 export type ApprovalFlow = 'admin_only' | 'manager_then_admin';
+export type GatepassType = 'out-in' | 'out';
 
 export interface GatepassApprovalRequest {
   id: string;
@@ -38,6 +39,7 @@ export interface Gatepass {
   date: string;
   status: GatepassStatus;
   approval_flow: ApprovalFlow;
+  gatepass_type: GatepassType;
   rejection_reason?: string;
   is_emergency?: boolean;
   checked_out_at?: string;
@@ -94,6 +96,7 @@ export const useUpdateGatepassStatus = () => {
       status: GatepassStatus;
       rejection_reason?: string;
       remarks?: string;
+      approval_step?: 1 | 2;
     }) => {
       const { id, ...body } = data;
       return api.put<Gatepass>(`/gatepasses/${id}/status`, body);

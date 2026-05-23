@@ -5,16 +5,23 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Check, X, Eye, Clock, User, MapPin, Calendar } from 'lucide-react';
+import { Check, X, Eye, Clock, MapPin } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { formatGatepassReason, getGatepassStatusLabel } from '@/lib/gatepass';
+import {
+  formatGatepassDate,
+  formatGatepassDateTime,
+  formatGatepassReason,
+  getGatepassStatusLabel,
+  isPermanentOutGatepass,
+} from '@/lib/gatepass';
 
 interface GatepassDetailsModalProps {
   gatepass: any;
   isOpen: boolean;
   onClose: () => void;
-  onApprove?: (id: string) => void;
-  onReject?: (id: string, reason: string) => void;
+  onApprove?: (id: string, approvalStep?: 1 | 2) => void;
+  onReject?: (id: string, reason: string, approvalStep?: 1 | 2) => void;
+  preferredApprovalStep?: 1 | 2 | null;
   userRole: 'admin' | 'manager' | 'gatekeeper' | 'employee' | 'guest';
 }
 
@@ -24,27 +31,42 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
   onClose,
   onApprove,
   onReject,
+  preferredApprovalStep,
   userRole
 }) => {
   const [rejectionReason, setRejectionReason] = React.useState('');
 
   if (!gatepass) return null;
 
-  const canApprove =
-    (userRole === 'admin' && gatepass.status === 'pending_admin_approval') ||
-    (userRole === 'manager' && gatepass.status === 'pending_manager_approval');
+  const getPendingApprovalByStep = (step: 1 | 2) =>
+    gatepass.approval_requests?.find((approval: any) => approval.step === step && approval.status === 'pending');
 
-  const formatDateTime = (dateTimeString: string | null | undefined) => {
-    if (!dateTimeString) return 'Not set';
-    return new Date(dateTimeString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
+  const getApprovalActionSteps = (): Array<1 | 2> => {
+    if (userRole === 'manager') {
+      return gatepass.status === 'pending_manager_approval' && getPendingApprovalByStep(1) ? [1] : [];
+    }
+
+    if (userRole === 'admin') {
+      if (gatepass.status === 'pending_admin_approval' && getPendingApprovalByStep(2)) {
+        return [2];
+      }
+
+      if (gatepass.status === 'pending_manager_approval' && gatepass.approval_flow === 'manager_then_admin') {
+        const steps: Array<1 | 2> = [];
+        if (getPendingApprovalByStep(1)) steps.push(1);
+        if (getPendingApprovalByStep(2)) steps.push(2);
+        return steps;
+      }
+    }
+
+    return [];
   };
+
+  const approvalActionSteps = getApprovalActionSteps();
+  const orderedApprovalActionSteps =
+    preferredApprovalStep && approvalActionSteps.includes(preferredApprovalStep)
+      ? [preferredApprovalStep, ...approvalActionSteps.filter((step) => step !== preferredApprovalStep)]
+      : approvalActionSteps;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -62,29 +84,33 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
       case 'active':
         return <Badge className="bg-blue-100 text-blue-700 border-blue-300">Out</Badge>;
       case 'completed':
-        return <Badge className="bg-gray-100 text-gray-700 border-gray-300">In</Badge>;
+        return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300">Completed</Badge>;
       default:
         return <Badge variant="secondary">{getGatepassStatusLabel(status as any)}</Badge>;
     }
   };
 
-  const handleApprove = () => {
+  const handleApprove = (approvalStep?: 1 | 2) => {
     if (onApprove) {
-      onApprove(gatepass.id);
+      onApprove(gatepass.id, approvalStep);
       toast({
-        title: "Gatepass Approved",
-        description: "The gatepass request has been approved successfully",
+        title: approvalStep === 1 ? "Manager Step Approved" : "Gatepass Approved",
+        description: approvalStep === 1
+          ? "The manager approval step has been approved successfully"
+          : "The gatepass request has been approved successfully",
       });
       onClose();
     }
   };
 
-  const handleReject = () => {
+  const handleReject = (approvalStep?: 1 | 2) => {
     if (onReject && rejectionReason.trim()) {
-      onReject(gatepass.id, rejectionReason);
+      onReject(gatepass.id, rejectionReason, approvalStep);
       toast({
-        title: "Gatepass Rejected",
-        description: "The gatepass request has been rejected",
+        title: approvalStep === 1 ? "Manager Step Rejected" : "Gatepass Rejected",
+        description: approvalStep === 1
+          ? "The manager approval step has been rejected"
+          : "The gatepass request has been rejected",
         variant: "destructive"
       });
       onClose();
@@ -102,40 +128,21 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
-            <span className="flex items-center space-x-2">
-              <Eye className="w-5 h-5" />
-              <span>Gatepass Details</span>
-            </span>
+          <DialogTitle className="flex items-start justify-between gap-3 pr-8">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="flex items-center gap-2">
+                <Eye className="h-5 w-5 shrink-0" />
+                <span>Gatepass Details</span>
+              </span>
+              <span className="text-sm font-medium tabular-nums text-gray-600">
+                {formatGatepassDate(gatepass.date)}
+              </span>
+            </div>
             {getStatusBadge(gatepass.status)}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Gatepass ID */}
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-lg text-gray-800 break-all">{gatepass.id}</h3>
-            <p className="text-sm text-gray-500">Gatepass ID</p>
-          </div>
-
-          {/* Employee Details */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center space-x-3">
-              <User className="w-5 h-5 text-gray-500" />
-              <div>
-                <p className="font-medium">{gatepass.profiles?.name || gatepass.employee_name || 'Employee'}</p>
-                <p className="text-sm text-gray-500">Employee</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <Calendar className="w-5 h-5 text-gray-500" />
-              <div>
-                <p className="font-medium">{new Date(gatepass.date).toLocaleDateString()}</p>
-                <p className="text-sm text-gray-500">Date</p>
-              </div>
-            </div>
-          </div>
-
           {/* Purpose and Destination */}
           <div className="space-y-4">
             <div>
@@ -176,7 +183,7 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
                     <Clock className="w-5 h-5 text-gray-500" />
                     <div>
                       <Label className="text-sm font-medium text-gray-700">Out Time</Label>
-                      <p className="mt-1">{formatDateTime(gatepass.checked_out_at)}</p>
+                      <p className="mt-1">{formatGatepassDateTime(gatepass.checked_out_at)}</p>
                     </div>
                   </div>
                 )}
@@ -186,7 +193,7 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
                     <Clock className="w-5 h-5 text-gray-500" />
                     <div>
                       <Label className="text-sm font-medium text-gray-700">In Time</Label>
-                      <p className="mt-1">{formatDateTime(gatepass.checked_in_at)}</p>
+                      <p className="mt-1">{formatGatepassDateTime(gatepass.checked_in_at)}</p>
                     </div>
                   </div>
                 )}
@@ -240,11 +247,9 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
           )}
 
           {/* Approval Actions */}
-          {canApprove && (
+          {orderedApprovalActionSteps.length > 0 && (
             <div className="space-y-4 bg-gray-50 p-4 rounded-lg">
-              <h4 className="font-medium text-gray-800">
-                {userRole === 'manager' ? 'Manager Actions' : 'Admin Actions'}
-              </h4>
+              <h4 className="font-medium text-gray-800">Approval Actions</h4>
               
               <div className="space-y-3">
                 <div>
@@ -258,23 +263,30 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
                   />
                 </div>
                 
-                <div className="flex space-x-3">
-                  <Button
-                    onClick={handleApprove}
-                    className="flex-1 bg-green-600 hover:bg-green-700"
-                  >
-                    <Check className="w-4 h-4 mr-2" />
-                    Approve
-                  </Button>
-                  <Button
-                    onClick={handleReject}
-                    variant="destructive"
-                    className="flex-1"
-                  >
-                    <X className="w-4 h-4 mr-2" />
-                    Reject
-                  </Button>
-                </div>
+                {orderedApprovalActionSteps.map((step) => (
+                  <div key={step} className="space-y-2 rounded-lg border bg-white p-3">
+                    <p className="text-sm font-medium text-gray-700">
+                      {step === 1 ? 'Manager Step Actions' : 'Admin Step Actions'}
+                    </p>
+                    <div className="flex space-x-3">
+                      <Button
+                        onClick={() => handleApprove(step)}
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                      >
+                        <Check className="w-4 h-4 mr-2" />
+                        Approve
+                      </Button>
+                      <Button
+                        onClick={() => handleReject(step)}
+                        variant="destructive"
+                        className="flex-1"
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -285,9 +297,13 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
               <h4 className="font-medium text-blue-800">Gatekeeper Actions</h4>
               <p className="text-sm text-blue-600 mt-1">
                 {gatepass.status === 'approved'
-                  ? 'This gatepass is approved and ready for the Out action.'
+                  ? isPermanentOutGatepass(gatepass)
+                    ? 'Out reason: permanent exit for the day. Mark Out once — no In action.'
+                    : 'This gatepass is approved and ready for the Out action.'
                   : gatepass.status === 'active'
-                    ? 'Employee is currently outside. Use the In action on the dashboard when they return.'
+                    ? isPermanentOutGatepass(gatepass)
+                      ? 'Permanent Out for the day — no check-in required.'
+                      : 'Employee is currently outside. Use the In action on the dashboard when they return.'
                     : 'All request statuses are visible here for gatekeeper tracking.'}
               </p>
             </div>

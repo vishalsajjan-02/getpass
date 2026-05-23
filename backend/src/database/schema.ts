@@ -69,6 +69,8 @@ export const schema: string[] = [
     approval_flow         TEXT        NOT NULL DEFAULT 'admin_only'
                           CHECK(approval_flow IN ('admin_only', 'manager_then_admin')),
     rejection_reason      TEXT,
+    gatepass_type         VARCHAR(10) NOT NULL DEFAULT 'out-in'
+                          CHECK(gatepass_type IN ('out-in', 'out')),
     is_emergency          BOOLEAN     NOT NULL DEFAULT FALSE,
     checked_out_at        TIMESTAMPTZ,
     checked_out_by        UUID        REFERENCES users(id) ON DELETE SET NULL,

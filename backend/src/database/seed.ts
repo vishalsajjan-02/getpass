@@ -16,14 +16,9 @@ const seedRoles: SeedUser['role'][] = ['admin', 'manager', 'gatekeeper', 'employ
 const seedGatepassReasons = [
   'Lunch',
   'Out',
-  'Personal Work',
-  'Emergency',
-  'Client Visit',
-  'Visit to Vendor',
-  'Unit 2',
   'Other',
 ];
-const seedDepartments = ['Software R&D', 'Hardware R&D', 'Store', 'QA', 'Production'];
+const seedDepartments = ['Software R&D', 'Hardware R&D', 'Store', 'QA', 'Production', 'HR'];
 
 const seedUsers: SeedUser[] = [
   {

@@ -1,29 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import Sidebar from '../components/Sidebar';
+import DashboardLayout from '@/components/DashboardLayout';
+import DashboardBanner from '@/components/DashboardBanner';
 import MetricCard from '../components/MetricCard';
 import GatepassDetailsModal from '../components/GatepassDetailsModal';
-import GatepassCard from '../components/GatepassCard';
+import GatepassList from '../components/GatepassList';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Shield, QrCode, Eye, RefreshCw, Search, CheckCircle, Clock, Users, AlertTriangle, LogOut, Menu } from 'lucide-react';
+import { Shield, QrCode, Eye, RefreshCw, Search, CheckCircle, Clock, Users, AlertTriangle, LogOut } from 'lucide-react';
 import { useGatepasses, useUpdateGatepassStatus } from '../hooks/useGatepasses';
-import { useMockAuth } from '../contexts/MockAuthContext';
 import { toast } from '@/hooks/use-toast';
-import { useIsMobile } from '@/hooks/use-mobile';
-import { formatGatepassReason, getGatepassStatusLabel } from '@/lib/gatepass';
+import { formatGatepassReason, formatGatepassTime, getGatepassStatusLabel, isPermanentOutGatepass } from '@/lib/gatepass';
 
 const SecurityDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedGatepass, setSelectedGatepass] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  const { user } = useMockAuth();
   const { data: gatepasses = [], isLoading } = useGatepasses();
   const updateGatepassMutation = useUpdateGatepassStatus();
-  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (!selectedGatepass) return;
@@ -36,7 +31,6 @@ const SecurityDashboard = () => {
   const menuItems = [
     { id: 'overview', label: 'Dashboard', icon: <Shield className="w-5 h-5" /> },
     { id: 'gatepasses', label: 'Gate Passes', icon: <QrCode className="w-5 h-5" /> },
-    { id: 'notifications', label: 'Notifications', icon: <AlertTriangle className="w-5 h-5" /> }
   ];
 
   // Filter gatepasses based on search term
@@ -47,12 +41,19 @@ const SecurityDashboard = () => {
   );
 
   const getStatusBadge = (status: string) => {
-    const approved = status === 'approved';
+    const badgeClass: Record<string, string> = {
+      approved: 'bg-gradient-to-r from-green-100 to-green-200 text-green-700 border-green-300',
+      active: 'bg-gradient-to-r from-blue-100 to-blue-200 text-blue-700 border-blue-300',
+      completed: 'bg-gradient-to-r from-emerald-100 to-emerald-200 text-emerald-800 border-emerald-300',
+      pending: 'bg-gradient-to-r from-orange-100 to-orange-200 text-orange-700 border-orange-300',
+      pending_manager_approval: 'bg-gradient-to-r from-amber-100 to-amber-200 text-amber-700 border-amber-300',
+      pending_admin_approval: 'bg-gradient-to-r from-orange-100 to-orange-200 text-orange-700 border-orange-300',
+      rejected: 'bg-gradient-to-r from-red-100 to-red-200 text-red-700 border-red-300',
+      cancelled: 'bg-gradient-to-r from-rose-100 to-rose-200 text-rose-700 border-rose-300',
+    };
+
     return (
-      <Badge className={approved
-        ? 'bg-gradient-to-r from-green-100 to-green-200 text-green-700 border-green-300'
-        : 'bg-gradient-to-r from-red-100 to-red-200 text-red-700 border-red-300'}
-      >
+      <Badge className={badgeClass[status] ?? 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 border-gray-300'}>
         {getGatepassStatusLabel(status as any)}
       </Badge>
     );
@@ -99,46 +100,59 @@ const SecurityDashboard = () => {
   };
 
   const stats = {
-    todaysPasses: gatepasses.filter(g => g.date === new Date().toISOString().split('T')[0]).length,
-    activeNow: gatepasses.filter(g => g.status === 'active').length,
-    checkedIn: gatepasses.filter(g => g.status === 'completed').length,
-    pendingReturn: gatepasses.filter(g => g.status !== 'approved').length,
+    total: gatepasses.length,
+    activeNow: gatepasses.filter((g) => g.status === 'active').length,
+    completed: gatepasses.filter((g) => g.status === 'completed').length,
+    pending: gatepasses.filter(
+      (g) =>
+        g.status === 'pending' ||
+        g.status === 'pending_manager_approval' ||
+        g.status === 'pending_admin_approval',
+    ).length,
   };
 
-  const renderOverview = () => (
-    <div className="space-y-6 md:space-y-8 animate-fade-in">
-      <div className="bg-gradient-to-r from-orange-400 via-orange-500 to-rose-500 rounded-xl px-5 py-4 text-white shadow-xl">
-        <h2 className="text-2xl md:text-3xl font-bold">Security Dashboard</h2>
-        <p className="text-white/90 text-sm md:text-base leading-tight">Monitor and validate employee gatepasses at entry/exit points</p>
-      </div>
+  const pageHeaders: Record<string, { title: string; description: string }> = {
+    overview: {
+      title: 'Security Dashboard',
+      description: 'Monitor and validate employee gatepasses at entry/exit points',
+    },
+    gatepasses: {
+      title: 'Gate Passes',
+      description: 'Search and manage all employee gatepass records',
+    },
+  };
 
+  const currentPageHeader = pageHeaders[activeTab] ?? pageHeaders.overview;
+
+  const renderOverview = () => (
+    <div className="space-y-6 animate-fade-in">
       {/* Metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
         <MetricCard
-          title="Today's Passes"
-          value={stats.todaysPasses.toString()}
-          subtitle="+3 from yesterday"
+          title="Total Passes"
+          value={stats.total.toString()}
+          subtitle="All time"
           icon={<QrCode className="w-4 h-4 md:w-6 md:h-6" />}
           color="blue"
         />
         <MetricCard
           title="Active Now"
           value={stats.activeNow.toString()}
-          subtitle="Currently outside"
+          subtitle="All time"
           icon={<Clock className="w-4 h-4 md:w-6 md:h-6" />}
           color="orange"
         />
         <MetricCard
-          title="Checked In"
-          value={stats.checkedIn.toString()}
-          subtitle="Completed today"
+          title="Completed"
+          value={stats.completed.toString()}
+          subtitle="All time"
           icon={<CheckCircle className="w-4 h-4 md:w-6 md:h-6" />}
           color="green"
         />
         <MetricCard
-          title="Not Approved"
-          value={stats.pendingReturn.toString()}
-          subtitle="Pending, rejected, cancelled"
+          title="Pending Approval"
+          value={stats.pending.toString()}
+          subtitle="All time"
           icon={<AlertTriangle className="w-4 h-4 md:w-6 md:h-6" />}
           color="red"
         />
@@ -223,7 +237,7 @@ const SecurityDashboard = () => {
                         <div className="text-center">
                           <p className="text-xs font-semibold text-gray-700">OUT</p>
                           <p className="text-xs font-medium text-blue-600">
-                            {new Date(gatepass.checked_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {formatGatepassTime(gatepass.checked_out_at)}
                           </p>
                         </div>
                       )}
@@ -231,7 +245,7 @@ const SecurityDashboard = () => {
                         <div className="text-center">
                           <p className="text-xs font-semibold text-gray-700">IN</p>
                           <p className="text-xs font-medium text-green-600">
-                            {new Date(gatepass.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {formatGatepassTime(gatepass.checked_in_at)}
                           </p>
                         </div>
                       )}
@@ -249,7 +263,7 @@ const SecurityDashboard = () => {
                           {updateGatepassMutation.isPending ? 'Saving...' : 'Out'}
                         </Button>
                       )}
-                      {gatepass.status === 'active' && (
+                      {gatepass.status === 'active' && !isPermanentOutGatepass(gatepass) && (
                         <Button 
                           onClick={() => handleIn(gatepass.id)}
                           disabled={updateGatepassMutation.isPending}
@@ -302,16 +316,11 @@ const SecurityDashboard = () => {
           <p className="text-gray-500">Loading gatepasses...</p>
         </div>
       ) : (
-        <div className="grid gap-4">
-          {filteredGatepasses.map((gatepass) => (
-            <GatepassCard
-              key={gatepass.id}
-              gatepass={gatepass}
-              onViewDetails={setSelectedGatepass}
-              getStatusBadge={getStatusBadge}
-            />
-          ))}
-        </div>
+        <GatepassList
+          gatepasses={filteredGatepasses}
+          onViewDetails={setSelectedGatepass}
+          getStatusBadge={getStatusBadge}
+        />
       )}
     </div>
   );
@@ -322,58 +331,26 @@ const SecurityDashboard = () => {
         return renderOverview();
       case 'gatepasses':
         return renderGatepasses();
-      case 'notifications':
-        return (
-          <div className="text-center p-8 text-gray-500">
-            <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p>No notifications at this time</p>
-          </div>
-        );
       default:
         return renderOverview();
     }
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-br from-gray-50 via-orange-50 to-rose-50 flex">
-      {/* Mobile Menu Button */}
-      {isMobile && (
-        <Button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="fixed top-4 left-4 z-50 bg-orange-600 hover:bg-orange-700 shadow-lg"
-          size="sm"
-        >
-          <Menu className="w-4 h-4" />
-        </Button>
-      )}
-
-      {/* Sidebar */}
-      <div className={`${isMobile ? 'fixed inset-y-0 left-0 z-40' : 'relative'} ${isMobile && !sidebarOpen ? '-translate-x-full' : 'translate-x-0'} transition-transform duration-300 ease-in-out`}>
-        <Sidebar 
-          activeTab={activeTab}
-          onTabChange={(tab) => {
-            setActiveTab(tab);
-            if (isMobile) setSidebarOpen(false);
-          }}
-          menuItems={menuItems}
-          colorScheme="orange"
+    <DashboardLayout
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
+      menuItems={menuItems}
+      colorScheme="orange"
+      pageHeader={
+        <DashboardBanner
+          title={currentPageHeader.title}
+          description={currentPageHeader.description}
+          icon={<Shield className="h-7 w-7 text-white" />}
         />
-      </div>
-
-      {/* Mobile Overlay */}
-      {isMobile && sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-30"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Main Content */}
-      <main className={`flex-1 min-w-0 min-h-0 p-4 md:p-8 overflow-hidden ${isMobile ? 'ml-0' : ''}`}>
-        <div className={`h-full overflow-y-auto scrollbar-hidden ${isMobile ? 'mt-16' : ''}`}>
-          {renderContent()}
-        </div>
-      </main>
+      }
+    >
+      {renderContent()}
 
       <GatepassDetailsModal
         gatepass={selectedGatepass}
@@ -381,7 +358,7 @@ const SecurityDashboard = () => {
         onClose={() => setSelectedGatepass(null)}
         userRole="gatekeeper"
       />
-    </div>
+    </DashboardLayout>
   );
 };
 
