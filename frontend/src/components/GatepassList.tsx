@@ -7,6 +7,8 @@ interface GatepassListProps {
   gatepasses: any[];
   onViewDetails: (gatepass: any) => void;
   getStatusBadge: (status: string) => React.ReactNode;
+  renderRowActions?: (gatepass: any) => React.ReactNode;
+  showRequesterName?: boolean;
   title?: string;
   headerAction?: React.ReactNode;
   emptyState?: React.ReactNode;
@@ -17,6 +19,8 @@ const GatepassList: React.FC<GatepassListProps> = ({
   gatepasses,
   onViewDetails,
   getStatusBadge,
+  renderRowActions,
+  showRequesterName = false,
   title,
   headerAction,
   emptyState,
@@ -33,6 +37,8 @@ const GatepassList: React.FC<GatepassListProps> = ({
             gatepass={gatepass}
             onViewDetails={onViewDetails}
             getStatusBadge={getStatusBadge}
+            renderActions={renderRowActions}
+            showRequesterName={showRequesterName}
           />
         ))}
       </div>

@@ -37,21 +37,63 @@ export const calculateExtraLunchMinutes = (gatepass: Gatepass): number => {
   return Math.max(0, calculateLunchDurationMinutes(gatepass) - LUNCH_LIMIT_MINUTES);
 };
 
-const getMonday = (date: Date): Date => {
-  const monday = new Date(date);
-  monday.setHours(12, 0, 0, 0);
-  const day = monday.getDay();
-  const diff = monday.getDate() - day + (day === 0 ? -6 : 1);
-  monday.setDate(diff);
-  return monday;
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const formatDateOnly = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
-const formatWeekLabel = (weekStart: Date): string => {
-  const end = new Date(weekStart);
-  end.setDate(end.getDate() + 6);
-  const startFmt = weekStart.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
-  const endFmt = end.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
-  return `${startFmt} – ${endFmt}`;
+export const formatChartDateLabel = (dateKey: string): string => {
+  const date = parseGatepassDate(dateKey);
+  if (!date) return dateKey;
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${day} ${MONTH_SHORT[date.getMonth()]}`;
+};
+
+export const formatChartMonthLabel = (monthKey: string): string => {
+  const match = monthKey.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return monthKey;
+  return MONTH_SHORT[Number(match[2]) - 1] ?? monthKey;
+};
+
+const isLunchGatepass = (gatepass: Gatepass): boolean =>
+  gatepass.reason_name.trim().toLowerCase() === 'lunch';
+
+const getGatepassDateKey = (gatepass: Gatepass): string | null => {
+  const fromDate = toDateOnlyKey(gatepass.date);
+  if (fromDate) return fromDate;
+  if (gatepass.checked_out_at) return toDateOnlyKey(gatepass.checked_out_at);
+  return null;
+};
+
+export const getEmployeeChartRange = (
+  gatepasses: Gatepass[],
+  rangeStart: string | null,
+): { startDate: string; endDate: string } => {
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+  const endDate = formatDateOnly(end);
+
+  if (rangeStart) {
+    return { startDate: rangeStart, endDate };
+  }
+
+  const lunchDates = gatepasses
+    .filter(isLunchGatepass)
+    .map(getGatepassDateKey)
+    .filter((value): value is string => value !== null)
+    .sort();
+
+  if (lunchDates.length > 0) {
+    return { startDate: lunchDates[0], endDate };
+  }
+
+  const start = new Date(end);
+  start.setDate(end.getDate() - 29);
+  return { startDate: formatDateOnly(start), endDate };
 };
 
 export type ReasonPieDatum = {
@@ -75,62 +117,185 @@ export const buildReasonPieData = (gatepasses: Gatepass[]): ReasonPieDatum[] => 
     .filter((item) => item.count > 0);
 };
 
-export type WeeklyExtraDatum = {
-  weekStart: string;
-  label: string;
-  minutes: number;
+export type LunchBarView = 'daily' | 'monthly' | 'yearly';
+
+export type LunchChartFilter = {
+  view: LunchBarView;
+  year: number;
+  /** 1–12; used when view is daily. */
+  month: number;
 };
 
-export const buildWeeklyExtraTimeData = (
-  gatepasses: Gatepass[],
-  rangeStart: string | null,
-): WeeklyExtraDatum[] => {
-  const end = new Date();
-  end.setHours(12, 0, 0, 0);
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
 
-  let start: Date = parseGatepassDate(rangeStart ?? '') ?? new Date(end);
-  if (!rangeStart) {
-    const sortedDates = [...gatepasses]
-      .map((g) => toDateOnlyKey(g.date))
-      .filter((d): d is string => d !== null)
-      .sort();
-    if (sortedDates.length > 0) {
-      start = parseGatepassDate(sortedDates[0]) ?? start;
-    } else {
-      start = new Date(end);
-      start.setDate(end.getDate() - 56);
-    }
+export const getMonthSelectOptions = (): { value: number; label: string }[] =>
+  MONTH_NAMES.map((label, index) => ({ value: index + 1, label }));
+
+export const getLunchChartPeriodLabel = (filter: LunchChartFilter): string => {
+  if (filter.view === 'daily') {
+    return `${MONTH_NAMES[filter.month - 1]} ${filter.year}`;
+  }
+  if (filter.view === 'monthly') {
+    return String(filter.year);
+  }
+  return 'All years';
+};
+
+export const getLunchChartDateRange = (
+  filter: LunchChartFilter,
+  gatepasses: Gatepass[],
+): { startDate: string; endDate: string } => {
+  if (filter.view === 'daily') {
+    const start = new Date(filter.year, filter.month - 1, 1);
+    const end = new Date(filter.year, filter.month, 0);
+    return { startDate: formatDateOnly(start), endDate: formatDateOnly(end) };
   }
 
-  const cursor = getMonday(start);
-  const endMonday = getMonday(end);
-  const weeks: WeeklyExtraDatum[] = [];
+  if (filter.view === 'monthly') {
+    return {
+      startDate: `${filter.year}-01-01`,
+      endDate: `${filter.year}-12-31`,
+    };
+  }
 
-  while (cursor.getTime() <= endMonday.getTime()) {
-    const weekKey = toDateOnlyKey(cursor);
-    if (weekKey) {
-      weeks.push({
-        weekStart: weekKey,
-        label: formatWeekLabel(cursor),
-        minutes: 0,
+  return getEmployeeChartRange(gatepasses, null);
+};
+
+/** Years present in gatepass data plus current year (for dropdowns). */
+export const getAvailableChartYears = (gatepasses: Gatepass[]): number[] => {
+  const years = new Set<number>([new Date().getFullYear()]);
+  gatepasses.forEach((gatepass) => {
+    const key = getGatepassDateKey(gatepass);
+    if (key) years.add(Number(key.slice(0, 4)));
+  });
+  return [...years].sort((a, b) => b - a);
+};
+
+export type EmployeeLunchBarDatum = {
+  key: string;
+  label: string;
+  extraMinutes: number;
+  lunchMinutes: number;
+  allowedMinutes: number;
+};
+
+const eachDayInRange = (startDate: string, endDate: string): string[] => {
+  const start = parseGatepassDate(startDate);
+  const end = parseGatepassDate(endDate);
+  if (!start || !end) return [];
+
+  const days: string[] = [];
+  const cursor = new Date(start);
+  cursor.setHours(12, 0, 0, 0);
+  const endTime = new Date(end);
+  endTime.setHours(12, 0, 0, 0);
+
+  while (cursor.getTime() <= endTime.getTime()) {
+    const key = toDateOnlyKey(cursor);
+    if (key) days.push(key);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return days;
+};
+
+const upsertBarBucket = (
+  map: Map<string, EmployeeLunchBarDatum>,
+  key: string,
+  label: string,
+  lunchMinutes: number,
+  extraMinutes: number,
+) => {
+  const existing = map.get(key) ?? {
+    key,
+    label,
+    extraMinutes: 0,
+    lunchMinutes: 0,
+    allowedMinutes: 0,
+  };
+
+  existing.lunchMinutes += lunchMinutes;
+  existing.extraMinutes += extraMinutes;
+  existing.allowedMinutes += Math.max(0, lunchMinutes - extraMinutes);
+  map.set(key, existing);
+};
+
+const aggregateLunchGatepasses = (
+  gatepasses: Gatepass[],
+  startDate: string,
+  endDate: string,
+  bucketKey: (dateKey: string) => string,
+  bucketLabel: (bucket: string) => string,
+  fillDays?: string[],
+): EmployeeLunchBarDatum[] => {
+  const map = new Map<string, EmployeeLunchBarDatum>();
+
+  if (fillDays) {
+    for (const dayKey of fillDays) {
+      map.set(dayKey, {
+        key: dayKey,
+        label: bucketLabel(dayKey),
+        extraMinutes: 0,
+        lunchMinutes: 0,
+        allowedMinutes: 0,
       });
     }
-    cursor.setDate(cursor.getDate() + 7);
   }
 
-  gatepasses.forEach((gatepass) => {
+  for (const gatepass of gatepasses) {
+    if (!isLunchGatepass(gatepass)) continue;
+
+    const dateKey = getGatepassDateKey(gatepass);
+    if (!dateKey || dateKey < startDate || dateKey > endDate) continue;
+
+    const lunch = calculateLunchDurationMinutes(gatepass);
     const extra = calculateExtraLunchMinutes(gatepass);
-    if (extra <= 0) return;
+    const key = bucketKey(dateKey);
+    upsertBarBucket(map, key, bucketLabel(key), lunch, extra);
+  }
 
-    const gatepassDate = parseGatepassDate(gatepass.date);
-    if (!gatepassDate) return;
-
-    const weekStart = toDateOnlyKey(getMonday(gatepassDate));
-    if (!weekStart) return;
-
-    const bucket = weeks.find((week) => week.weekStart === weekStart);
-    if (bucket) bucket.minutes += extra;
-  });
-
-  return weeks;
+  return [...map.values()].sort((left, right) => left.key.localeCompare(right.key));
 };
+
+export const buildEmployeeLunchBarData = (
+  gatepasses: Gatepass[],
+  filter: LunchChartFilter,
+): EmployeeLunchBarDatum[] => {
+  const { startDate, endDate } = getLunchChartDateRange(filter, gatepasses);
+  const { view } = filter;
+
+  if (view === 'monthly') {
+    return aggregateLunchGatepasses(
+      gatepasses,
+      startDate,
+      endDate,
+      (dateKey) => dateKey.slice(0, 7),
+      formatChartMonthLabel,
+    );
+  }
+
+  if (view === 'yearly') {
+    return aggregateLunchGatepasses(
+      gatepasses,
+      startDate,
+      endDate,
+      (dateKey) => dateKey.slice(0, 4),
+      (yearKey) => yearKey,
+    );
+  }
+
+  return aggregateLunchGatepasses(
+    gatepasses,
+    startDate,
+    endDate,
+    (dateKey) => dateKey,
+    formatChartDateLabel,
+    eachDayInRange(startDate, endDate),
+  );
+};
+
+export const hasEmployeeLunchBarData = (data: EmployeeLunchBarDatum[]): boolean =>
+  data.some((item) => item.lunchMinutes > 0 || item.extraMinutes > 0);

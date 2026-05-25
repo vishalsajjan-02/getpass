@@ -8,15 +8,44 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Shield, QrCode, Eye, RefreshCw, Search, CheckCircle, Clock, Users, AlertTriangle, LogOut } from 'lucide-react';
+import { Shield, QrCode, Eye, Search, CheckCircle, Clock, AlertTriangle, LogOut, ArrowLeft } from 'lucide-react';
 import { useGatepasses, useUpdateGatepassStatus } from '../hooks/useGatepasses';
 import { toast } from '@/hooks/use-toast';
-import { formatGatepassReason, formatGatepassTime, getGatepassStatusLabel, isPermanentOutGatepass } from '@/lib/gatepass';
+import {
+  formatGatepassReason,
+  formatGatepassTime,
+  getGatepassReasonParts,
+  getGatepassStatusLabel,
+  isPermanentOutGatepass,
+} from '@/lib/gatepass';
+
+const toLocalDateString = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getRequestDateKey = (value: string | undefined): string | null => {
+  if (!value) return null;
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return toLocalDateString(parsed);
+  }
+
+  const normalized = value.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : null;
+};
 
 const SecurityDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
+  const [gatepassPage, setGatepassPage] = useState<'today' | 'history'>('today');
   const [selectedGatepass, setSelectedGatepass] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyFromDate, setHistoryFromDate] = useState('');
+  const [historyToDate, setHistoryToDate] = useState('');
   const { data: gatepasses = [], isLoading } = useGatepasses();
   const updateGatepassMutation = useUpdateGatepassStatus();
 
@@ -28,17 +57,52 @@ const SecurityDashboard = () => {
     }
   }, [gatepasses, selectedGatepass]);
 
+  useEffect(() => {
+    if (activeTab !== 'gatepasses') {
+      setGatepassPage('today');
+    }
+  }, [activeTab]);
+
   const menuItems = [
     { id: 'overview', label: 'Dashboard', icon: <Shield className="w-5 h-5" /> },
     { id: 'gatepasses', label: 'Gate Passes', icon: <QrCode className="w-5 h-5" /> },
   ];
 
-  // Filter gatepasses based on search term
-  const filteredGatepasses = gatepasses.filter((gatepass) =>
+  const todayDate = toLocalDateString(new Date());
+  const todayGatepasses = gatepasses.filter((gatepass) => getRequestDateKey(gatepass.date) === todayDate);
+
+  const sortedTodayGatepasses = [...todayGatepasses].sort((left, right) => {
+    const leftCompleted = left.status === 'completed';
+    const rightCompleted = right.status === 'completed';
+    if (leftCompleted !== rightCompleted) {
+      return leftCompleted ? 1 : -1;
+    }
+    return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+  });
+
+  const matchesSearch = (gatepass: (typeof gatepasses)[number]) =>
     gatepass.profiles?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     gatepass.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    formatGatepassReason(gatepass).toLowerCase().includes(searchTerm.toLowerCase())
-  );
+    formatGatepassReason(gatepass).toLowerCase().includes(searchTerm.toLowerCase());
+
+  const filteredTodayGatepasses = sortedTodayGatepasses.filter(matchesSearch);
+
+  const historyGatepasses = gatepasses.filter((gatepass) => {
+    const requestDate = getRequestDateKey(gatepass.date);
+    if (!requestDate || requestDate >= todayDate) return false;
+
+    const search = historySearch.trim().toLowerCase();
+    const matchesHistorySearch =
+      !search ||
+      gatepass.profiles?.name?.toLowerCase().includes(search) ||
+      gatepass.id.toLowerCase().includes(search) ||
+      formatGatepassReason(gatepass).toLowerCase().includes(search);
+
+    const matchesDateFrom = !historyFromDate || requestDate >= historyFromDate;
+    const matchesDateTo = !historyToDate || requestDate <= historyToDate;
+
+    return matchesHistorySearch && matchesDateFrom && matchesDateTo;
+  });
 
   const getStatusBadge = (status: string) => {
     const badgeClass: Record<string, string> = {
@@ -100,10 +164,10 @@ const SecurityDashboard = () => {
   };
 
   const stats = {
-    total: gatepasses.length,
-    activeNow: gatepasses.filter((g) => g.status === 'active').length,
-    completed: gatepasses.filter((g) => g.status === 'completed').length,
-    pending: gatepasses.filter(
+    total: todayGatepasses.length,
+    activeNow: todayGatepasses.filter((g) => g.status === 'active').length,
+    completed: todayGatepasses.filter((g) => g.status === 'completed').length,
+    pending: todayGatepasses.filter(
       (g) =>
         g.status === 'pending' ||
         g.status === 'pending_manager_approval' ||
@@ -118,174 +182,161 @@ const SecurityDashboard = () => {
     },
     gatepasses: {
       title: 'Gate Passes',
-      description: 'Search and manage all employee gatepass records',
+      description: "View and manage today's employee gatepass records",
     },
   };
 
-  const currentPageHeader = pageHeaders[activeTab] ?? pageHeaders.overview;
+  const currentPageHeader =
+    activeTab === 'gatepasses' && gatepassPage === 'history'
+      ? {
+          title: 'Gatepass History',
+          description: 'Search and review past gatepass records',
+        }
+      : pageHeaders[activeTab] ?? pageHeaders.overview;
 
   const renderOverview = () => (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 animate-fade-in">
       {/* Metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
+      <div className="mt-2 grid grid-cols-2 gap-3 md:gap-6 lg:grid-cols-4">
         <MetricCard
           title="Total Passes"
           value={stats.total.toString()}
-          subtitle="All time"
+          subtitle="Today"
           icon={<QrCode className="w-4 h-4 md:w-6 md:h-6" />}
           color="blue"
         />
         <MetricCard
           title="Active Now"
           value={stats.activeNow.toString()}
-          subtitle="All time"
+          subtitle="Today"
           icon={<Clock className="w-4 h-4 md:w-6 md:h-6" />}
           color="orange"
         />
         <MetricCard
           title="Completed"
           value={stats.completed.toString()}
-          subtitle="All time"
+          subtitle="Today"
           icon={<CheckCircle className="w-4 h-4 md:w-6 md:h-6" />}
           color="green"
         />
         <MetricCard
           title="Pending Approval"
           value={stats.pending.toString()}
-          subtitle="All time"
+          subtitle="Today"
           icon={<AlertTriangle className="w-4 h-4 md:w-6 md:h-6" />}
           color="red"
         />
       </div>
 
-      {/* Quick Actions */}
-      <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-gray-50">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2 text-gray-800 text-lg md:text-xl">
-            <QrCode className="w-4 h-4 md:w-5 md:h-5 text-orange-600" />
-            <span>Quick Actions</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col sm:flex-row flex-wrap gap-3 md:gap-4">
-            <Button className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 shadow-lg hover:shadow-xl transition-all duration-200 hover:-translate-y-1 text-sm">
-              <QrCode className="w-4 h-4 mr-2" />
-              Scan QR Code
-            </Button>
-            <Button 
-              variant="outline" 
-              onClick={() => setActiveTab('gatepasses')}
-              className="hover:bg-gradient-to-r hover:from-gray-50 hover:to-gray-100 border-2 hover:border-gray-300 transition-all duration-200 text-sm"
-            >
-              <Eye className="w-4 h-4 mr-2" />
-              View All Passes
-            </Button>
-            <Button variant="outline" className="hover:bg-gradient-to-r hover:from-gray-50 hover:to-gray-100 border-2 hover:border-gray-300 transition-all duration-200 text-sm">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh Data
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Today's Gatepasses */}
       <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-gray-50">
-        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-3 sm:space-y-0">
-          <CardTitle className="text-gray-800 text-lg md:text-xl">Today's Gatepasses</CardTitle>
-          <div className="flex items-center space-x-3 w-full sm:w-auto">
-            <Input
-              placeholder="Search employee..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full sm:w-64 border-2 focus:border-orange-300 text-sm"
-            />
-            <Button size="sm" className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 shrink-0">
-              <Search className="w-4 h-4" />
-            </Button>
-          </div>
+        <CardHeader className="space-y-0 px-4 py-2 pb-1">
+          <CardTitle className="text-base font-semibold text-gray-800 md:text-lg">Today's Gatepasses</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-4 pb-3 pt-0">
           {isLoading ? (
-            <div className="text-center p-8 text-gray-500">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto mb-4"></div>
-              <p>Loading gatepasses...</p>
+            <div className="py-6 text-center text-gray-500">
+              <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-orange-600 mx-auto mb-2"></div>
+              <p className="text-sm">Loading gatepasses...</p>
             </div>
-          ) : filteredGatepasses.length === 0 ? (
-            <div className="text-center p-8 text-gray-500">
-              <QrCode className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>No gatepasses found</p>
+          ) : todayGatepasses.length === 0 ? (
+            <div className="py-6 text-center text-gray-500">
+              <QrCode className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+              <p className="text-sm">No gatepasses found for today</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {filteredGatepasses.slice(0, 10).map((gatepass) => (
-                <div key={gatepass.id} className="flex flex-col lg:flex-row items-start lg:items-center justify-between p-4 md:p-6 border-2 rounded-xl bg-white shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-1 space-y-4 lg:space-y-0">
-                  <div className="flex items-center space-x-4 w-full lg:w-auto">
-                    <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-orange-500 to-red-600 rounded-full flex items-center justify-center shadow-md shrink-0">
-                      <span className="text-white font-bold text-xs md:text-sm">
-                        {gatepass.profiles?.name?.split(' ').map(n => n[0]).join('') || 'U'}
-                      </span>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-gray-800 text-sm md:text-base truncate">{gatepass.profiles?.name || 'Unknown'}</p>
-                      <p className="text-xs md:text-sm text-gray-500 truncate">{gatepass.profiles?.email} • {gatepass.profiles?.department}</p>
-                      <p className="text-xs md:text-sm text-gray-600 truncate">{formatGatepassReason(gatepass)}</p>
-                    </div>
+            <div className="space-y-2">
+              {sortedTodayGatepasses.slice(0, 10).map((gatepass) => {
+                const reason = getGatepassReasonParts(gatepass);
+                const reasonLabel = reason.description ? `${reason.name}: ${reason.description}` : reason.name;
+
+                return (
+                <div key={gatepass.id} className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 shadow-sm">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-red-600 shadow-sm">
+                    <span className="text-white font-bold text-xs">
+                      {gatepass.profiles?.name?.split(' ').map(n => n[0]).join('') || 'U'}
+                    </span>
                   </div>
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-3 sm:space-y-0 sm:space-x-4 lg:space-x-6 w-full lg:w-auto">
-                    <div className="flex space-x-4">
-                      {gatepass.checked_out_at && (
-                        <div className="text-center">
-                          <p className="text-xs font-semibold text-gray-700">OUT</p>
-                          <p className="text-xs font-medium text-blue-600">
-                            {formatGatepassTime(gatepass.checked_out_at)}
-                          </p>
-                        </div>
+                  <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+                    <p
+                      className="min-w-0 shrink truncate text-sm text-gray-600"
+                      title={`${gatepass.profiles?.name || 'Unknown'}${gatepass.profiles?.department ? ` • ${gatepass.profiles.department}` : ''}`}
+                    >
+                      <span className="font-semibold text-gray-800">{gatepass.profiles?.name || 'Unknown'}</span>
+                      {gatepass.profiles?.department && (
+                        <>
+                          <span className="text-gray-300"> • </span>
+                          <span>{gatepass.profiles.department}</span>
+                        </>
                       )}
-                      {gatepass.checked_in_at && (
-                        <div className="text-center">
-                          <p className="text-xs font-semibold text-gray-700">IN</p>
-                          <p className="text-xs font-medium text-green-600">
-                            {formatGatepassTime(gatepass.checked_in_at)}
-                          </p>
-                        </div>
+                    </p>
+                    <span
+                      className="max-w-[45%] shrink-0 truncate rounded-md bg-orange-100 px-2 py-0.5 text-xs text-orange-800 ring-1 ring-orange-200"
+                      title={reasonLabel}
+                    >
+                      <span className="font-bold">{reason.name}</span>
+                      {reason.description && (
+                        <>
+                          <span className="font-normal text-orange-700">: {reason.description}</span>
+                        </>
                       )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {getStatusBadge(gatepass.status)}
-                      {gatepass.status === 'approved' && (
-                        <Button 
-                          onClick={() => handleOut(gatepass.id)}
-                          disabled={updateGatepassMutation.isPending}
-                          size="sm"
-                          className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all duration-200 text-xs font-semibold"
-                        >
-                          <LogOut className="w-3 h-3 mr-1" />
-                          {updateGatepassMutation.isPending ? 'Saving...' : 'Out'}
-                        </Button>
-                      )}
-                      {gatepass.status === 'active' && !isPermanentOutGatepass(gatepass) && (
-                        <Button 
-                          onClick={() => handleIn(gatepass.id)}
-                          disabled={updateGatepassMutation.isPending}
-                          size="sm"
-                          className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-lg hover:shadow-xl transition-all duration-200 text-xs font-semibold"
-                        >
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          {updateGatepassMutation.isPending ? 'Saving...' : 'In'}
-                        </Button>
-                      )}
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        onClick={() => setSelectedGatepass(gatepass)}
-                        className="hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200"
+                    </span>
+                  </div>
+                  <div className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+                    {(gatepass.checked_out_at || gatepass.checked_in_at) && (
+                      <span className="hidden text-xs sm:inline">
+                        {gatepass.checked_out_at && (
+                          <>
+                            <span className="font-semibold text-gray-700">OUT </span>
+                            <span className="font-medium text-blue-600">{formatGatepassTime(gatepass.checked_out_at)}</span>
+                          </>
+                        )}
+                        {gatepass.checked_out_at && gatepass.checked_in_at && (
+                          <span className="mx-1 text-gray-300">·</span>
+                        )}
+                        {gatepass.checked_in_at && (
+                          <>
+                            <span className="font-semibold text-gray-700">IN </span>
+                            <span className="font-medium text-green-600">{formatGatepassTime(gatepass.checked_in_at)}</span>
+                          </>
+                        )}
+                      </span>
+                    )}
+                    <span className="shrink-0">{getStatusBadge(gatepass.status)}</span>
+                    {gatepass.status === 'approved' && (
+                      <Button
+                        onClick={() => handleOut(gatepass.id)}
+                        disabled={updateGatepassMutation.isPending}
+                        size="sm"
+                        className="h-8 bg-gradient-to-r from-blue-600 to-indigo-600 px-2 text-xs font-semibold hover:from-blue-700 hover:to-indigo-700"
                       >
-                        <Eye className="w-3 h-3" />
+                        <LogOut className="mr-1 h-3 w-3" />
+                        {updateGatepassMutation.isPending ? 'Saving...' : 'Out'}
                       </Button>
-                    </div>
+                    )}
+                    {gatepass.status === 'active' && !isPermanentOutGatepass(gatepass) && (
+                      <Button
+                        onClick={() => handleIn(gatepass.id)}
+                        disabled={updateGatepassMutation.isPending}
+                        size="sm"
+                        className="h-8 bg-gradient-to-r from-green-600 to-emerald-600 px-2 text-xs font-semibold hover:from-green-700 hover:to-emerald-700"
+                      >
+                        <CheckCircle className="mr-1 h-3 w-3" />
+                        {updateGatepassMutation.isPending ? 'Saving...' : 'In'}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelectedGatepass(gatepass)}
+                      className="h-8 w-8 shrink-0 p-0 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
+                    >
+                      <Eye className="h-3 w-3" />
+                    </Button>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </CardContent>
@@ -293,37 +344,93 @@ const SecurityDashboard = () => {
     </div>
   );
 
-  const renderGatepasses = () => (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-3 sm:space-y-0">
-        <h2 className="text-xl md:text-2xl font-bold text-gray-800">All Gatepasses</h2>
-        <div className="flex items-center space-x-3 w-full sm:w-auto">
+  const renderGatepassesToolbar = () =>
+    gatepassPage === 'history' ? (
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-white/80 px-3 py-1.5 shadow-sm">
+        <Button size="sm" variant="outline" onClick={() => setGatepassPage('today')}>
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Button>
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <Input
-            placeholder="Search gatepasses..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full sm:w-64 border-2 focus:border-orange-300 text-sm"
+            type="search"
+            value={historySearch}
+            onChange={(e) => setHistorySearch(e.target.value)}
+            placeholder="Search gatepass history..."
+            className="h-9 border-gray-200 bg-white pl-9 text-sm shadow-sm focus-visible:ring-orange-400"
+            aria-label="Search gatepass history"
           />
-          <Button size="sm" className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 shrink-0">
-            <Search className="w-4 h-4" />
-          </Button>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-sm font-medium text-gray-600">From</span>
+          <Input
+            type="date"
+            value={historyFromDate}
+            onChange={(e) => setHistoryFromDate(e.target.value)}
+            className="h-9 w-40 border-gray-200 bg-white text-sm shadow-sm"
+          />
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-sm font-medium text-gray-600">To</span>
+          <Input
+            type="date"
+            value={historyToDate}
+            onChange={(e) => setHistoryToDate(e.target.value)}
+            className="h-9 w-40 border-gray-200 bg-white text-sm shadow-sm"
+          />
         </div>
       </div>
-
-      {isLoading ? (
-        <div className="text-center p-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto mb-4"></div>
-          <p className="text-gray-500">Loading gatepasses...</p>
-        </div>
-      ) : (
-        <GatepassList
-          gatepasses={filteredGatepasses}
-          onViewDetails={setSelectedGatepass}
-          getStatusBadge={getStatusBadge}
+    ) : (
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          placeholder="Search gatepasses..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="h-9 w-full min-w-[200px] flex-1 border-2 focus:border-orange-300 text-sm sm:max-w-xs"
         />
-      )}
-    </div>
-  );
+        <Button size="sm" className="h-9 shrink-0 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
+          <Search className="w-4 h-4" />
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setGatepassPage('history')} className="h-9 shrink-0">
+          History
+        </Button>
+      </div>
+    );
+
+  const renderGatepasses = () => {
+    const listGatepasses = gatepassPage === 'history' ? historyGatepasses : filteredTodayGatepasses;
+    const emptyMessage =
+      gatepassPage === 'history'
+        ? 'No past gatepasses found for the selected search or date range.'
+        : 'No gatepasses found for today.';
+
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-xl font-bold text-gray-800 md:text-2xl">
+            {gatepassPage === 'history' ? 'Gatepass History' : "Today's Gatepasses"}
+          </h2>
+          {renderGatepassesToolbar()}
+        </div>
+
+        {isLoading ? (
+          <div className="text-center p-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto mb-4"></div>
+            <p className="text-gray-500">Loading gatepasses...</p>
+          </div>
+        ) : listGatepasses.length === 0 ? (
+          <div className="text-center p-8 text-gray-500">{emptyMessage}</div>
+        ) : (
+          <GatepassList
+            gatepasses={listGatepasses}
+            onViewDetails={setSelectedGatepass}
+            getStatusBadge={getStatusBadge}
+          />
+        )}
+      </div>
+    );
+  };
 
   const renderContent = () => {
     switch (activeTab) {

@@ -64,10 +64,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
         <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-[#f8f9fb]">
           {(pageHeader || pageToolbar) && (
-            <div className="shrink-0 z-20 border-b border-gray-200/80 bg-[#f8f9fb] px-4 pb-4 pt-2 md:px-5 md:pb-4 md:pt-2.5">
+            <div className="shrink-0 z-20 border-b border-gray-200/80 bg-[#f8f9fb] px-4 pb-2 pt-2 md:px-5 md:pb-2 md:pt-2.5">
               <div className="mx-auto w-full max-w-[1600px]">
                 {pageHeader}
-                {pageToolbar ? <div className={pageHeader ? 'mt-4' : undefined}>{pageToolbar}</div> : null}
+                {pageToolbar ? <div className={pageHeader ? 'mt-2' : undefined}>{pageToolbar}</div> : null}
               </div>
             </div>
           )}

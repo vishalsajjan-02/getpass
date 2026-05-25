@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import * as UserService from '../service';
 import { sendSuccess, sendError, sendMessage } from '../../../utils/response.utils';
 import type { AuthRequest } from '../../../middleware/auth.middleware';
-import type { CreateUserInput, UpdateUserInput } from '../../../types';
+import type { BulkImportUserInput, CreateUserInput, UpdateUserInput } from '../../../types';
 
 export const getAll = async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -41,6 +41,19 @@ export const getOne = async (req: Request, res: Response): Promise<void> => {
     sendSuccess(res, await UserService.getUserById(req.params.id));
   } catch (err) {
     sendError(res, (err as Error).message, 404);
+  }
+};
+
+export const bulkImport = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const rows = req.body as { users?: BulkImportUserInput[] };
+    if (!Array.isArray(rows.users) || rows.users.length === 0) {
+      sendError(res, 'users array is required');
+      return;
+    }
+    sendSuccess(res, await UserService.bulkImportUsers(rows.users), 201);
+  } catch (err) {
+    sendError(res, (err as Error).message);
   }
 };
 

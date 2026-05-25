@@ -11,6 +11,7 @@ router.get('/roles', requireRole('admin', 'manager'), UserController.getRoles);
 router.get('/managers', requireRole('admin', 'manager'), UserController.getManagers);
 router.get('/departments', requireRole('admin', 'manager'), UserController.getDepartments);
 router.get('/', requireRole('admin', 'manager'), UserController.getAll);
+router.post('/bulk-import', requireRole('admin', 'manager'), UserController.bulkImport);
 router.post('/', requireRole('admin', 'manager'), UserController.create);
 router.get('/:id', UserController.getOne);
 router.put('/:id', UserController.update);

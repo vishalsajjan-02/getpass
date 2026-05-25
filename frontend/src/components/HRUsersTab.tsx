@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,11 +7,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Edit, Trash2, Users, Shield, UserCheck, Search, Eye, EyeOff } from 'lucide-react';
-import { useProfiles } from '@/hooks/useProfiles';
+import { Plus, Edit, Trash2, Users, Shield, UserCheck, Search, Eye, EyeOff, Download, Upload } from 'lucide-react';
+import { useProfiles, type Profile } from '@/hooks/useProfiles';
 import { useUserRoles, useManagers, useDepartments } from '@/hooks/useLookupData';
 import { useCreateUser, useUpdateUser, useDeleteUser } from '@/hooks/useUserManagement';
+import { exportUsersCsv } from '@/lib/users-csv';
+import BulkImportUsersDialog from '@/components/BulkImportUsersDialog';
 import { toast } from '@/hooks/use-toast';
 
 type UserFormData = {
@@ -66,12 +67,13 @@ export const CreateUserDialogButton = ({ className = '' }: { className?: string 
     <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
       <DialogTrigger asChild>
         <Button
+          size="sm"
           className={
             className ||
-            'h-12 rounded-xl bg-white px-5 text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.18)] hover:bg-slate-50'
+            'h-9 shrink-0 bg-orange-500 px-3 text-white hover:bg-orange-600'
           }
         >
-          <Plus className="w-4 h-4 mr-2" />
+          <Plus className="mr-2 h-4 w-4" />
           Create User
         </Button>
       </DialogTrigger>
@@ -184,8 +186,150 @@ export const CreateUserDialogButton = ({ className = '' }: { className?: string 
   );
 };
 
-const HRUsersTab = () => {
-  const [searchTerm, setSearchTerm] = useState('');
+const USER_TABLE_COLGROUP = (
+  <colgroup>
+    <col className="w-[18%]" />
+    <col className="w-[22%]" />
+    <col className="w-[12%]" />
+    <col className="w-[16%]" />
+    <col className="w-[16%]" />
+    <col className="w-[16%]" />
+  </colgroup>
+);
+
+export type UserRoleFilter = 'all' | Profile['role'];
+
+export const filterUserProfiles = (
+  profiles: Profile[],
+  searchTerm: string,
+  roleFilter: UserRoleFilter,
+) => {
+  let list = profiles;
+
+  if (roleFilter !== 'all') {
+    list = list.filter((profile) => profile.role === roleFilter);
+  }
+
+  const search = searchTerm.trim().toLowerCase();
+  if (!search) return list;
+
+  return list.filter((profile) =>
+    profile.name?.toLowerCase().includes(search)
+    || profile.email?.toLowerCase().includes(search)
+    || profile.role?.toLowerCase().includes(search)
+    || profile.department?.toLowerCase().includes(search),
+  );
+};
+
+export const UsersToolbar = ({
+  searchTerm,
+  onSearchChange,
+  roleFilter,
+  onRoleFilterChange,
+}: {
+  searchTerm: string;
+  onSearchChange: (value: string) => void;
+  roleFilter: UserRoleFilter;
+  onRoleFilterChange: (value: UserRoleFilter) => void;
+}) => {
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const { data: profiles = [] } = useProfiles();
+  const { data: roles = fallbackRoles.map((name, i) => ({ name, role_id: i + 1 })) } = useUserRoles();
+
+  const filteredProfiles = useMemo(
+    () => filterUserProfiles(profiles, searchTerm, roleFilter),
+    [profiles, searchTerm, roleFilter],
+  );
+
+  const resolveManagerName = (managerId?: string) => {
+    if (!managerId) return 'N/A';
+    return profiles.find((profile) => profile.id === managerId)?.name ?? 'N/A';
+  };
+
+  const handleExport = () => {
+    if (filteredProfiles.length === 0) {
+      toast({
+        title: 'Nothing to export',
+        description: 'No users match the current search.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    exportUsersCsv(filteredProfiles, resolveManagerName);
+    toast({
+      title: 'Users exported',
+      description: `${filteredProfiles.length} user(s) downloaded as CSV.`,
+    });
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-white/80 px-3 py-1 shadow-sm">
+      <h3 className="shrink-0 text-base font-semibold leading-none text-gray-900">
+        All Users ({filteredProfiles.length})
+      </h3>
+      <div className="relative min-w-[200px] flex-1">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <Input
+          type="search"
+          value={searchTerm}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search users..."
+          className="h-9 border-gray-200 bg-white pl-9 text-sm shadow-sm focus-visible:ring-orange-400"
+          aria-label="Search users"
+        />
+      </div>
+      <Select
+        value={roleFilter}
+        onValueChange={(value) => onRoleFilterChange(value as UserRoleFilter)}
+      >
+        <SelectTrigger className="h-9 w-[150px] shrink-0 border-gray-200 bg-white text-sm shadow-sm">
+          <SelectValue placeholder="All roles" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Roles</SelectItem>
+          {roles.map((role) => (
+            <SelectItem key={role.role_id} value={role.name}>
+              {formatRoleLabel(role.name)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-9"
+          onClick={() => setImportDialogOpen(true)}
+        >
+          <Upload className="mr-2 h-4 w-4" />
+          Import
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="h-9 bg-green-600 hover:bg-green-700"
+          onClick={handleExport}
+          disabled={filteredProfiles.length === 0}
+        >
+          <Download className="mr-2 h-4 w-4" />
+          Export
+        </Button>
+        <CreateUserDialogButton />
+      </div>
+
+      <BulkImportUsersDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
+    </div>
+  );
+};
+
+type HRUsersTabProps = {
+  searchTerm: string;
+  roleFilter: UserRoleFilter;
+};
+
+const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
   const [editingUser, setEditingUser] = useState(null);
   const [showEditPassword, setShowEditPassword] = useState(false);
 
@@ -196,16 +340,10 @@ const HRUsersTab = () => {
   const updateUserMutation = useUpdateUser();
   const deleteUserMutation = useDeleteUser();
 
-  const filteredProfiles = profiles.filter((profile) => {
-    const search = searchTerm.trim().toLowerCase();
-    if (!search) return true;
-    return (
-      profile.name?.toLowerCase().includes(search) ||
-      profile.email?.toLowerCase().includes(search) ||
-      profile.role?.toLowerCase().includes(search) ||
-      profile.department?.toLowerCase().includes(search)
-    );
-  });
+  const filteredProfiles = useMemo(
+    () => filterUserProfiles(profiles, searchTerm, roleFilter),
+    [profiles, searchTerm, roleFilter],
+  );
 
   const sortedProfiles = [...filteredProfiles].sort((a, b) => {
     const roleOrder: Record<string, number> = { admin: 1, manager: 2, gatekeeper: 3, employee: 4, guest: 5 };
@@ -270,81 +408,72 @@ const HRUsersTab = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div>
       <Card className="border-0 shadow-lg bg-white/95">
-        <CardContent className="p-6">
-          <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h3 className="text-2xl font-semibold text-gray-900">All Users ({profiles.length})</h3>
-            </div>
-            <div className="relative w-full max-w-sm">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search users..."
-                className="h-10 rounded-lg border-gray-200 bg-white pl-9"
-              />
-            </div>
-          </div>
+        <CardContent className="p-0">
           {isLoading ? (
-            <div className="text-center py-8">Loading users...</div>
+            <div className="py-8 text-center">Loading users...</div>
           ) : sortedProfiles.length === 0 ? (
-            <div className="rounded-xl border bg-white p-8 text-center text-gray-500 shadow-sm">
+            <div className="p-8 text-center text-gray-500">
               No users found for the current search.
             </div>
           ) : (
-            <Table className="overflow-hidden rounded-xl">
-              <TableHeader className="[&_tr]:border-0">
-                <TableRow className="bg-gradient-to-r from-orange-400 to-orange-500 hover:bg-gradient-to-r hover:from-orange-400 hover:to-orange-500">
-                  <TableHead className="h-11 px-4 text-white">Name</TableHead>
-                  <TableHead className="h-11 px-4 text-white">Email</TableHead>
-                  <TableHead className="h-11 px-4 text-white">Role</TableHead>
-                  <TableHead className="h-11 px-4 text-white">Department</TableHead>
-                  <TableHead className="h-11 px-4 text-white">Manager</TableHead>
-                  <TableHead className="h-11 px-4 text-white">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedProfiles.map((profile) => (
-                  <TableRow key={profile.id} className="border-b border-gray-100">
-                    <TableCell className="flex items-center space-x-2 py-4">
-                      {getRoleIcon(profile.role)}
-                      <span className="font-medium">{profile.name}</span>
-                    </TableCell>
-                    <TableCell className="py-4">{profile.email}</TableCell>
-                    <TableCell className="py-4">{getRoleBadge(profile.role)}</TableCell>
-                    <TableCell className="py-4">{profile.department || 'N/A'}</TableCell>
-                    <TableCell className="py-4">
-                      {profile.role === 'employee' ? getManagerName(profile.manager_id) : '—'}
-                    </TableCell>
-                    <TableCell className="py-4">
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setShowEditPassword(false);
-                            setEditingUser({ ...profile, department_id: profile.department_id ?? '', password: '' });
-                          }}
-                          className="h-8 w-8 rounded-lg p-0"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleDeleteUser(profile.id)}
-                          className="h-8 w-8 rounded-lg p-0"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="max-h-[calc(100vh-14rem)] overflow-y-auto rounded-xl scrollbar-hidden">
+              <table className="w-full table-fixed border-collapse text-sm">
+                {USER_TABLE_COLGROUP}
+                <thead className="sticky top-0 z-10">
+                  <tr className="bg-gradient-to-r from-orange-400 to-orange-500">
+                    <th className="h-11 px-4 text-left align-middle font-medium text-white">Name</th>
+                    <th className="h-11 px-4 text-left align-middle font-medium text-white">Email</th>
+                    <th className="h-11 px-4 text-left align-middle font-medium text-white">Role</th>
+                    <th className="h-11 px-4 text-left align-middle font-medium text-white">Department</th>
+                    <th className="h-11 px-4 text-left align-middle font-medium text-white">Manager</th>
+                    <th className="h-11 px-4 text-left align-middle font-medium text-white">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedProfiles.map((profile) => (
+                    <tr key={profile.id} className="border-b border-gray-100 transition-colors hover:bg-muted/50">
+                      <td className="px-4 py-4 align-middle">
+                        <div className="flex items-center space-x-2">
+                          {getRoleIcon(profile.role)}
+                          <span className="font-medium">{profile.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 align-middle">{profile.email}</td>
+                      <td className="px-4 py-4 align-middle">{getRoleBadge(profile.role)}</td>
+                      <td className="px-4 py-4 align-middle">{profile.department || 'N/A'}</td>
+                      <td className="px-4 py-4 align-middle">
+                        {profile.role === 'employee' ? getManagerName(profile.manager_id) : '—'}
+                      </td>
+                      <td className="px-4 py-4 align-middle">
+                        <div className="flex space-x-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setShowEditPassword(false);
+                              setEditingUser({ ...profile, department_id: profile.department_id ?? '', password: '' });
+                            }}
+                            className="h-8 w-8 rounded-lg p-0"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDeleteUser(profile.id)}
+                            className="h-8 w-8 rounded-lg p-0"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>

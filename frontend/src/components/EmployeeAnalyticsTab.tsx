@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, FileText, Clock, CheckCircle, X, BarChart3 } from 'lucide-react';
 import MetricCard from '@/components/MetricCard';
-import EmployeeAnalyticsCharts from '@/components/EmployeeAnalyticsCharts';
 import { useGatepasses, type Gatepass } from '@/hooks/useGatepasses';
 import { calculateExtraLunchMinutes, LUNCH_LIMIT_MINUTES } from '@/lib/employee-analytics';
 import {
@@ -78,9 +77,16 @@ const downloadCsv = (filename: string, rows: Array<Record<string, string | numbe
   window.URL.revokeObjectURL(url);
 };
 
-const EmployeeAnalyticsTab: React.FC = () => {
+interface EmployeeAnalyticsTabProps {
+  /** When provided, uses this list instead of the current user's gatepasses from the API. */
+  gatepasses?: Gatepass[];
+}
+
+const EmployeeAnalyticsTab: React.FC<EmployeeAnalyticsTabProps> = ({ gatepasses: gatepassesProp }) => {
   const [preset, setPreset] = useState<RangePreset>('1m');
-  const { data: gatepasses = [], isLoading } = useGatepasses();
+  const { data: fetchedGatepasses = [], isLoading: isFetching } = useGatepasses();
+  const gatepasses = gatepassesProp ?? fetchedGatepasses;
+  const isLoading = gatepassesProp === undefined ? isFetching : false;
 
   const rangeStart = useMemo(() => getRangeStart(preset), [preset]);
 
@@ -190,12 +196,6 @@ const EmployeeAnalyticsTab: React.FC = () => {
           color="purple"
         />
       </div>
-
-      <EmployeeAnalyticsCharts
-        gatepasses={filtered}
-        periodLabel={PRESET_LABELS[preset]}
-        rangeStart={rangeStart}
-      />
 
       <Card className="border-0 shadow-md">
         <CardHeader className="pb-2">

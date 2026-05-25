@@ -232,6 +232,21 @@ export interface CreateUserInput {
   manager_id?: string;
 }
 
+export interface BulkImportUserInput {
+  name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  department?: string;
+  manager_email?: string;
+}
+
+export interface BulkImportUsersResult {
+  created: number;
+  failed: number;
+  errors: Array<{ email: string; message: string }>;
+}
+
 export interface UpdateUserInput {
   name?: string;
   email?: string;

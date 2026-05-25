@@ -6,13 +6,15 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Download, Eye } from 'lucide-react';
+import { Download, Eye, Search } from 'lucide-react';
 import {
   type LunchEmployeeDetailReport,
   type LunchEmployeeSummary,
   useLunchEmployeeDetailReport,
   useLunchRangeReport,
 } from '@/hooks/useLunchAnalytics';
+import { useProfiles } from '@/hooks/useProfiles';
+import { formatGatepassDateTime } from '@/lib/gatepass';
 import { toast } from '@/hooks/use-toast';
 
 type AnalyticsPreset = '1w' | '1m' | '3m' | '6m' | '1y' | 'custom';
@@ -26,17 +28,10 @@ const formatMinutes = (minutes: number): string => {
   return `${hours}h ${remainingMinutes}m`;
 };
 
-const formatTimestamp = (value?: string): string => {
+const formatOptionalDateTime = (value?: string): string => {
   if (!value) return 'N/A';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'N/A';
-  return date.toLocaleString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const formatted = formatGatepassDateTime(value);
+  return formatted === '—' ? 'N/A' : formatted;
 };
 
 const statusBadgeClass = (status: LunchEmployeeSummary['current_status'] | 'Outside Office') => {
@@ -53,15 +48,10 @@ const statusBadgeClass = (status: LunchEmployeeSummary['current_status'] | 'Outs
 type LunchTableRow = {
   user_id: string;
   employee_name: string;
+  manager_name: string;
   department?: string;
   status: LunchEmployeeSummary['current_status'];
-  reason_name?: string;
-  checked_out_at?: string;
-  checked_in_at?: string;
   extra_lunch_minutes: number;
-  violation: boolean;
-  id: string;
-  date: string;
 };
 
 const limitBadgeClass = (extraMinutes: number) =>
@@ -148,7 +138,18 @@ const HRAnalyticsTab = () => {
     [detailCustomEndDate, detailCustomStartDate, detailPreset],
   );
 
+  const { data: profiles = [] } = useProfiles();
   const { data: rangeReport, isLoading } = useLunchRangeReport(startDate, endDate);
+
+  const managerNameByUserId = useMemo(() => {
+    const nameById = new Map(profiles.map((profile) => [profile.id, profile.name]));
+    return new Map(
+      profiles.map((profile) => [
+        profile.id,
+        profile.manager_id ? nameById.get(profile.manager_id) ?? 'Unassigned' : 'Unassigned',
+      ]),
+    );
+  }, [profiles]);
   const { data: employeeDetail, isLoading: isDetailLoading } = useLunchEmployeeDetailReport(
     selectedEmployee?.id,
     detailStartDate,
@@ -157,39 +158,18 @@ const HRAnalyticsTab = () => {
   );
 
   const reportEmployees = rangeReport?.employees ?? [];
-  const reportRows = useMemo(() => {
-    return reportEmployees.flatMap((employee) => {
-      if (employee.entries.length === 0) {
-        return [{
-          user_id: employee.user_id,
-          employee_name: employee.employee_name,
-          department: employee.department,
-          status: employee.current_status,
-          reason_name: undefined,
-          checked_out_at: employee.checked_out_at,
-          checked_in_at: employee.checked_in_at,
-          extra_lunch_minutes: employee.total_extra_lunch_minutes,
-          violation: employee.violation_count > 0,
-          id: `live-${employee.user_id}`,
-          date: startDate,
-        } satisfies LunchTableRow];
-      }
-
-      return employee.entries.map((entry) => ({
+  const reportRows = useMemo(
+    () =>
+      reportEmployees.map((employee) => ({
         user_id: employee.user_id,
         employee_name: employee.employee_name,
+        manager_name: managerNameByUserId.get(employee.user_id) ?? 'Unassigned',
         department: employee.department,
-        status: entry.current_status,
-        reason_name: entry.reason_name,
-        checked_out_at: entry.checked_out_at,
-        checked_in_at: entry.checked_in_at,
-        extra_lunch_minutes: entry.extra_lunch_minutes,
-        violation: entry.extra_lunch_minutes > 0,
-        id: entry.id,
-        date: entry.date,
-      } satisfies LunchTableRow));
-    });
-  }, [reportEmployees, startDate]);
+        status: employee.current_status,
+        extra_lunch_minutes: employee.total_extra_lunch_minutes,
+      } satisfies LunchTableRow)),
+    [managerNameByUserId, reportEmployees],
+  );
 
   const filteredRows = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -197,22 +177,18 @@ const HRAnalyticsTab = () => {
 
     return reportRows.filter((row) =>
       row.employee_name.toLowerCase().includes(query)
-      || (row.department || '').toLowerCase().includes(query)
-      || (row.reason_name || '').toLowerCase().includes(query)
-      || row.id.toLowerCase().includes(query),
+      || row.manager_name.toLowerCase().includes(query)
+      || (row.department || '').toLowerCase().includes(query),
     );
   }, [reportRows, searchTerm]);
 
   const exportTableData = () => {
     const rows = filteredRows.map((row) => ({
       Employee: row.employee_name,
-      Reason: row.reason_name || 'N/A',
+      'Manager Name': row.manager_name,
+      Department: row.department || 'N/A',
       Status: row.status,
-      'Check Out': formatTimestamp(row.checked_out_at),
-      'Check In': formatTimestamp(row.checked_in_at),
-      'Extra Time': formatMinutes(row.extra_lunch_minutes),
-      Violations: row.violation ? 'Yes' : 'No',
-      ID: row.id,
+      'Total Extra Time': formatMinutes(row.extra_lunch_minutes),
     }));
 
     downloadCsv(`lunch-analytics-${startDate}-to-${endDate}.csv`, rows);
@@ -224,15 +200,14 @@ const HRAnalyticsTab = () => {
 
   const exportEmployeeDetail = (detail: LunchEmployeeDetailReport) => {
     const rows = detail.activity_logs.map((log) => ({
-      Date: log.date,
+      Date: formatOptionalDateTime(log.date),
       Reason: log.reason_description ? `${log.reason_name}: ${log.reason_description}` : log.reason_name,
       Status: log.status,
-      'Check Out': formatTimestamp(log.checked_out_at),
-      'Check In': formatTimestamp(log.checked_in_at),
+      'Check Out': formatOptionalDateTime(log.checked_out_at),
+      'Check In': formatOptionalDateTime(log.checked_in_at),
       'Lunch Duration': formatMinutes(log.lunch_duration_minutes),
       'Extra Time': formatMinutes(log.extra_lunch_minutes),
       'Outside Duration': formatMinutes(log.total_outside_office_minutes),
-      Violation: log.violation ? 'Yes' : 'No',
     }));
 
     downloadCsv(`lunch-history-${detail.employee_name}-${detail.start_date}-to-${detail.end_date}.csv`, rows);
@@ -243,11 +218,24 @@ const HRAnalyticsTab = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+    <div className="space-y-4">
+      <div className="sticky top-0 z-10 -mx-4 bg-[#f8f9fb] px-4 pb-2 md:-mx-5 md:px-5">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-white/80 px-3 py-1.5 shadow-sm">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Search by employee, manager, or department..."
+            className="h-9 border-gray-200 bg-white pl-9 text-sm shadow-sm focus-visible:ring-orange-400"
+            aria-label="Search lunch analytics"
+          />
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
           <Select value={preset} onValueChange={(value) => setPreset(value as AnalyticsPreset)}>
-            <SelectTrigger className="w-[220px] bg-white">
+            <SelectTrigger className="h-9 w-[220px] border-gray-200 bg-white text-sm shadow-sm">
               <SelectValue placeholder="Select range" />
             </SelectTrigger>
             <SelectContent>
@@ -266,29 +254,28 @@ const HRAnalyticsTab = () => {
                 type="date"
                 value={customStartDate}
                 onChange={(event) => setCustomStartDate(event.target.value)}
-                className="w-[180px] bg-white"
+                className="h-9 w-[180px] border-gray-200 bg-white text-sm shadow-sm"
               />
               <Input
                 type="date"
                 value={customEndDate}
                 onChange={(event) => setCustomEndDate(event.target.value)}
-                className="w-[180px] bg-white"
+                className="h-9 w-[180px] border-gray-200 bg-white text-sm shadow-sm"
               />
             </>
           )}
 
-          <Input
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Search employee..."
-            className="w-[240px] bg-white"
-          />
+          <Button
+            size="sm"
+            onClick={exportTableData}
+            className="h-9 shrink-0 bg-green-600 hover:bg-green-700"
+            disabled={filteredRows.length === 0}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Export Data
+          </Button>
         </div>
-
-        <Button onClick={exportTableData} className="bg-green-600 hover:bg-green-700" disabled={filteredRows.length === 0}>
-          <Download className="mr-2 h-4 w-4" />
-          Export Data
-        </Button>
+        </div>
       </div>
 
       <Card>
@@ -306,38 +293,32 @@ const HRAnalyticsTab = () => {
                 <thead>
                   <tr className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                     <th className="px-4 py-3">Employee</th>
+                    <th className="px-4 py-3">Manager Name</th>
                     <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Check Out</th>
-                    <th className="px-4 py-3">Check In</th>
-                    <th className="px-4 py-3">Extra Time</th>
-                    <th className="px-4 py-3">Violations</th>
+                    <th className="px-4 py-3">Total Extra Time</th>
                     <th className="px-4 py-3">Details</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
                   {filteredRows.map((row) => (
-                    <tr key={`${row.user_id}-${row.id}-${row.checked_out_at ?? row.date}`}>
+                    <tr key={row.user_id}>
                       <td className="px-4 py-3">
                         <div>
                           <p className="font-medium text-gray-900">{row.employee_name}</p>
-                          <p className="text-xs text-gray-500">
-                            {[row.department || 'No Department', row.reason_name].filter(Boolean).join(' • ')}
-                          </p>
+                          <p className="text-xs text-gray-500">{row.department || 'No Department'}</p>
                         </div>
                       </td>
+                      <td className="px-4 py-3 text-gray-700">{row.manager_name}</td>
                       <td className="px-4 py-3">
                         <Badge className={statusBadgeClass(row.status)}>
                           {row.status}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-gray-700">{formatTimestamp(row.checked_out_at)}</td>
-                      <td className="px-4 py-3 text-gray-700">{formatTimestamp(row.checked_in_at)}</td>
                       <td className="px-4 py-3">
                         <Badge className={limitBadgeClass(row.extra_lunch_minutes)}>
                           {formatMinutes(row.extra_lunch_minutes)}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 font-medium text-gray-900">{row.violation ? 'Yes' : 'No'}</td>
                       <td className="px-4 py-3">
                         <Button
                           variant="outline"
@@ -364,22 +345,15 @@ const HRAnalyticsTab = () => {
 
       <Dialog open={!!selectedEmployee} onOpenChange={(open) => !open && setSelectedEmployee(null)}>
         <DialogContent className="max-h-[85vh] max-w-5xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedEmployee?.name ? `${selectedEmployee.name} Activity Details` : 'Employee Activity Details'}
-            </DialogTitle>
-          </DialogHeader>
-
-          {!selectedEmployee ? null : isDetailLoading ? (
-            <div className="py-8 text-center text-gray-500">Loading employee history...</div>
-          ) : !employeeDetail ? (
-            <div className="py-8 text-center text-gray-500">No detail report found for this employee.</div>
-          ) : (
-            <div className="space-y-6">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+          <DialogHeader className="space-y-0">
+            <div className="flex flex-wrap items-center gap-2 pr-8">
+              <DialogTitle className="min-w-[140px] flex-1 text-left text-lg font-semibold leading-tight">
+                {selectedEmployee?.name ? `${selectedEmployee.name} Activity Details` : 'Employee Activity Details'}
+              </DialogTitle>
+              {selectedEmployee && (
+                <>
                   <Select value={detailPreset} onValueChange={(value) => setDetailPreset(value as AnalyticsPreset)}>
-                    <SelectTrigger className="w-[220px] bg-white">
+                    <SelectTrigger className="h-9 w-[160px] shrink-0 bg-white">
                       <SelectValue placeholder="Select range" />
                     </SelectTrigger>
                     <SelectContent>
@@ -391,31 +365,42 @@ const HRAnalyticsTab = () => {
                       <SelectItem value="custom">Custom Date Range</SelectItem>
                     </SelectContent>
                   </Select>
-
                   {detailPreset === 'custom' && (
                     <>
                       <Input
                         type="date"
                         value={detailCustomStartDate}
                         onChange={(event) => setDetailCustomStartDate(event.target.value)}
-                        className="w-[180px] bg-white"
+                        className="h-9 w-[150px] shrink-0 bg-white"
                       />
                       <Input
                         type="date"
                         value={detailCustomEndDate}
                         onChange={(event) => setDetailCustomEndDate(event.target.value)}
-                        className="w-[180px] bg-white"
+                        className="h-9 w-[150px] shrink-0 bg-white"
                       />
                     </>
                   )}
-                </div>
+                  <Button
+                    size="sm"
+                    disabled={!employeeDetail || isDetailLoading}
+                    onClick={() => employeeDetail && exportEmployeeDetail(employeeDetail)}
+                    className="h-9 shrink-0 bg-green-600 hover:bg-green-700"
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Export CSV
+                  </Button>
+                </>
+              )}
+            </div>
+          </DialogHeader>
 
-                <Button onClick={() => exportEmployeeDetail(employeeDetail)} className="bg-green-600 hover:bg-green-700">
-                  <Download className="mr-2 h-4 w-4" />
-                  Export CSV
-                </Button>
-              </div>
-
+          {!selectedEmployee ? null : isDetailLoading ? (
+            <div className="py-8 text-center text-gray-500">Loading employee history...</div>
+          ) : !employeeDetail ? (
+            <div className="py-8 text-center text-gray-500">No detail report found for this employee.</div>
+          ) : (
+            <div className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <Card>
                   <CardContent className="p-4">
@@ -452,50 +437,44 @@ const HRAnalyticsTab = () => {
               </div>
 
               <Card>
-                <CardHeader>
-                  <CardTitle>Activity Logs</CardTitle>
+                <CardHeader className="space-y-0 px-4 py-2">
+                  <CardTitle className="text-base font-semibold">Activity Logs</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="px-4 pb-3 pt-0">
                   {employeeDetail.activity_logs.length === 0 ? (
-                    <div className="py-6 text-center text-gray-500">No activity logs found for this range.</div>
+                    <div className="py-4 text-center text-gray-500">No activity logs found for this range.</div>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="min-w-full divide-y divide-gray-200 text-sm">
                         <thead>
                           <tr className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-                            <th className="px-4 py-3">Date</th>
-                            <th className="px-4 py-3">Reason</th>
-                            <th className="px-4 py-3">Status</th>
-                            <th className="px-4 py-3">Check Out</th>
-                            <th className="px-4 py-3">Check In</th>
-                            <th className="px-4 py-3">Extra Time</th>
-                            <th className="px-4 py-3">Outside Duration</th>
-                            <th className="px-4 py-3">Violation</th>
+                            <th className="px-3 py-2">Date</th>
+                            <th className="px-3 py-2">Reason</th>
+                            <th className="px-3 py-2">Status</th>
+                            <th className="px-3 py-2">Check Out</th>
+                            <th className="px-3 py-2">Check In</th>
+                            <th className="px-3 py-2">Extra Time</th>
+                            <th className="px-3 py-2">Outside Duration</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 bg-white">
                           {employeeDetail.activity_logs.map((log) => (
                             <tr key={`${log.id}-${log.date}-${log.checked_out_at ?? 'na'}`}>
-                              <td className="px-4 py-3 text-gray-700">{log.date}</td>
-                              <td className="px-4 py-3 text-gray-700">
+                              <td className="px-3 py-2 text-gray-700">{formatOptionalDateTime(log.date)}</td>
+                              <td className="px-3 py-2 text-gray-700">
                                 {log.reason_description ? `${log.reason_name}: ${log.reason_description}` : log.reason_name}
                               </td>
-                              <td className="px-4 py-3">
+                              <td className="px-3 py-2">
                                 <Badge variant="outline">{log.status}</Badge>
                               </td>
-                              <td className="px-4 py-3 text-gray-700">{formatTimestamp(log.checked_out_at)}</td>
-                              <td className="px-4 py-3 text-gray-700">{formatTimestamp(log.checked_in_at)}</td>
-                              <td className="px-4 py-3">
+                              <td className="px-3 py-2 text-gray-700">{formatOptionalDateTime(log.checked_out_at)}</td>
+                              <td className="px-3 py-2 text-gray-700">{formatOptionalDateTime(log.checked_in_at)}</td>
+                              <td className="px-3 py-2">
                                 <Badge className={limitBadgeClass(log.extra_lunch_minutes)}>
                                   {formatMinutes(log.extra_lunch_minutes)}
                                 </Badge>
                               </td>
-                              <td className="px-4 py-3 text-gray-700">{formatMinutes(log.total_outside_office_minutes)}</td>
-                              <td className="px-4 py-3">
-                                <Badge className={log.violation ? 'bg-red-100 text-red-700 border-red-300' : 'bg-green-100 text-green-700 border-green-300'}>
-                                  {log.violation ? 'Yes' : 'No'}
-                                </Badge>
-                              </td>
+                              <td className="px-3 py-2 text-gray-700">{formatMinutes(log.total_outside_office_minutes)}</td>
                             </tr>
                           ))}
                         </tbody>

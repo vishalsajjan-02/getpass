@@ -111,6 +111,9 @@ export const formatGatepassDateTime = (value: string | Date): string =>
 /** Fixed width so dates align in one column across all list rows (dd-Mmm-yyyy). */
 export const GATEPASS_DATE_COLUMN_CLASS = 'w-[7.25rem] shrink-0';
 
+/** Fixed width so employee names align before the date column. */
+export const GATEPASS_NAME_COLUMN_CLASS = 'w-[6.5rem] sm:w-[7.5rem] shrink-0';
+
 export type GatepassRowDisplay = {
   reason: { name: string; description?: string };
   date: string;

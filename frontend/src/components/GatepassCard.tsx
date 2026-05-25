@@ -6,6 +6,7 @@ import { Eye, AlertTriangle } from 'lucide-react';
 import {
   formatGatepassCardTitle,
   GATEPASS_DATE_COLUMN_CLASS,
+  GATEPASS_NAME_COLUMN_CLASS,
   getGatepassRowDisplay,
 } from '@/lib/gatepass';
 import { cn } from '@/lib/utils';
@@ -14,6 +15,10 @@ interface GatepassCardProps {
   gatepass: any;
   onViewDetails: (gatepass: any) => void;
   getStatusBadge: (status: string) => React.ReactNode;
+  /** Extra actions (e.g. approve / reject) shown before the view button. */
+  renderActions?: (gatepass: any) => React.ReactNode;
+  /** Show requester name before the date (manager / admin lists). */
+  showRequesterName?: boolean;
   className?: string;
 }
 
@@ -24,6 +29,8 @@ const GatepassCard: React.FC<GatepassCardProps> = ({
   gatepass,
   onViewDetails,
   getStatusBadge,
+  renderActions,
+  showRequesterName = false,
   className,
 }) => {
   const row = getGatepassRowDisplay(gatepass);
@@ -48,6 +55,17 @@ const GatepassCard: React.FC<GatepassCardProps> = ({
       )}
       title={formatGatepassCardTitle(gatepass)}
     >
+      {showRequesterName && (
+        <div
+          className={cn(infoBoxClass, 'shrink-0 text-sm self-start', GATEPASS_NAME_COLUMN_CLASS)}
+          title={gatepass.profiles?.name || 'Unknown'}
+        >
+          <p className="truncate font-semibold text-gray-900">
+            {gatepass.profiles?.name || 'Unknown'}
+          </p>
+        </div>
+      )}
+
       <span
         className={cn(
           'pt-0.5 text-sm font-medium tabular-nums text-gray-600 shrink-0',
@@ -115,6 +133,7 @@ const GatepassCard: React.FC<GatepassCardProps> = ({
 
       <div className="ml-auto flex shrink-0 items-center gap-1.5 self-center">
         {getStatusBadge(gatepass.status)}
+        {renderActions?.(gatepass)}
         <Button
           size="icon"
           variant="outline"
