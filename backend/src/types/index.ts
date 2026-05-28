@@ -210,6 +210,29 @@ export interface LunchEmployeeDetailReport {
   activity_logs: LunchActivityLog[];
 }
 
+export interface UserInOutTime {
+  id: string;
+  user_id: string;
+  date: string;
+  in_time?: string;
+  out_time?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserInOutTimeReportRow {
+  user_id: string;
+  user_name: string;
+  email: string;
+  role: UserRole;
+  department?: string;
+  date: string;
+  entry_id?: string;
+  in_time?: string;
+  out_time?: string;
+  updated_at?: string;
+}
+
 export interface AuthPayload {
   userId: string;
   email: string;

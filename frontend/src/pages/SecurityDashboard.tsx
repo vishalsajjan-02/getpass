@@ -4,11 +4,12 @@ import DashboardBanner from '@/components/DashboardBanner';
 import MetricCard from '../components/MetricCard';
 import GatepassDetailsModal from '../components/GatepassDetailsModal';
 import GatepassList from '../components/GatepassList';
+import ReportingTimingTab from '../components/ReportingTimingTab';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Shield, QrCode, Eye, Search, CheckCircle, Clock, AlertTriangle, LogOut, ArrowLeft } from 'lucide-react';
+import { Shield, QrCode, Eye, Search, CheckCircle, Clock, AlertTriangle, LogOut, ArrowLeft, ClipboardList } from 'lucide-react';
 import { useGatepasses, useUpdateGatepassStatus } from '../hooks/useGatepasses';
 import { toast } from '@/hooks/use-toast';
 import {
@@ -66,6 +67,7 @@ const SecurityDashboard = () => {
   const menuItems = [
     { id: 'overview', label: 'Dashboard', icon: <Shield className="w-5 h-5" /> },
     { id: 'gatepasses', label: 'Gate Passes', icon: <QrCode className="w-5 h-5" /> },
+    { id: 'reporting-timing', label: 'Reporting Timing', icon: <ClipboardList className="w-5 h-5" /> },
   ];
 
   const todayDate = toLocalDateString(new Date());
@@ -183,6 +185,10 @@ const SecurityDashboard = () => {
     gatepasses: {
       title: 'Gate Passes',
       description: "View and manage today's employee gatepass records",
+    },
+    'reporting-timing': {
+      title: 'Reporting Timing',
+      description: 'Daily in/out timing for all users — updates throughout the day',
     },
   };
 
@@ -438,6 +444,8 @@ const SecurityDashboard = () => {
         return renderOverview();
       case 'gatepasses':
         return renderGatepasses();
+      case 'reporting-timing':
+        return <ReportingTimingTab />;
       default:
         return renderOverview();
     }
