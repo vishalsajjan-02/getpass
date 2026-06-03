@@ -1,2 +1,16 @@
-export * from './gatepass.service';
+export { getGatepassReasons } from './get-gatepass-reasons.service';
+export { getGatepasses } from './get-gatepasses.service';
+export { getTodaysGatepasses } from './get-todays-gatepasses.service';
+export { searchGatepasses } from './search-gatepasses.service';
+export { getGatepassById } from './get-gatepass-by-id.service';
+export { getGatepassStats } from './get-gatepass-stats.service';
+export { getLiveEmployeeStatuses } from './get-live-employee-statuses.service';
+export { getLunchAnalyticsRangeReport } from './get-lunch-analytics-range-report.service';
+export { getLunchEmployeeDetailReport } from './get-lunch-employee-detail-report.service';
+export { getDailyLunchReport } from './get-daily-lunch-report.service';
+export { getMonthlyLunchReport } from './get-monthly-lunch-report.service';
+export { getYearlyLunchReport } from './get-yearly-lunch-report.service';
+export { createGatepass } from './create-gatepass.service';
+export { updateGatepassStatus } from './update-gatepass-status.service';
+export { deleteGatepass } from './delete-gatepass.service';
 //# sourceMappingURL=index.d.ts.map

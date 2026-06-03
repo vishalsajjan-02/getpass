@@ -1,0 +1,1 @@
+{"version":3,"file":"get-departments.service.js","sourceRoot":"","sources":["../../../../src/modules/user/service/get-departments.service.ts"],"names":[],"mappings":";;;AAAA,uDAAiD;AAG1C,MAAM,cAAc,GAAG,KAAK,IAAiC,EAAE;IACpE,MAAM,MAAM,GAAG,MAAM,IAAA,gBAAK,GAAE,CAAC,KAAK,CAChC,iEAAiE,CAClE,CAAC;IACF,OAAO,MAAM,CAAC,IAA0B,CAAC;AAC3C,CAAC,CAAC;AALW,QAAA,cAAc,kBAKzB"}

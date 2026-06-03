@@ -14,6 +14,7 @@ const optionalString = (value) => {
     const trimmed = value.trim();
     return trimmed ? trimmed : undefined;
 };
+const isPermanentOutGatepass = (gatepass) => gatepass.gatepass_type === 'out' || gatepass.reason_name.trim().toLowerCase() === 'out';
 const toApprovalRequests = (value) => {
     if (Array.isArray(value))
         return value;
@@ -30,6 +31,7 @@ const rowToGatepass = (row) => ({
     date: String(row.date),
     status: row.status,
     approval_flow: row.approval_flow,
+    gatepass_type: row.gatepass_type ?? 'out-in',
     rejection_reason: optionalString(row.rejection_reason),
     is_emergency: Boolean(row.is_emergency),
     checked_out_at: optionalString(row.checked_out_at),
@@ -63,6 +65,7 @@ const BASE_QUERY = `
     g.date,
     g.status,
     g.approval_flow,
+    g.gatepass_type,
     g.rejection_reason,
     g.is_emergency,
     g.checked_out_at,
@@ -331,6 +334,7 @@ const getLiveEmployeeStatusesInternal = async (db, employeeId) => {
        FROM gatepasses g
        JOIN gatepass_reasons gr ON gr.id = g.reason_id
        WHERE g.user_id = u.id
+         AND g.status = 'active'
          AND g.checked_out_at IS NOT NULL
          AND g.checked_in_at IS NULL
        ORDER BY g.checked_out_at DESC NULLS LAST, g.created_at DESC
@@ -784,6 +788,7 @@ const createGatepass = async (userId, input) => {
         }
         const adminUserId = await getPrimaryAdminId(client);
         const requestDate = input.date ?? new Date().toISOString().slice(0, 10);
+        const gatepassType = normalizedReason === 'out' || input.gatepass_type === 'out' ? 'out' : 'out-in';
         const inserted = await client.query(`INSERT INTO gatepasses (
          user_id,
          reason_id,
@@ -792,9 +797,10 @@ const createGatepass = async (userId, input) => {
          date,
          status,
          approval_flow,
+         gatepass_type,
          is_emergency
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id`, [
             userId,
             reason.id,
@@ -803,6 +809,7 @@ const createGatepass = async (userId, input) => {
             requestDate,
             initialStatus,
             approvalFlow,
+            gatepassType,
             input.is_emergency ?? false,
         ]);
         const gatepassDbId = String(inserted.rows[0].id);
@@ -983,20 +990,37 @@ const updateGatepassStatus = async (id, input, actorUserId, actorRole) => {
             if (gatepass.status !== 'approved') {
                 throw new Error('Only approved gatepasses can be marked Out');
             }
-            await client.query(`UPDATE gatepasses
-         SET status = 'active',
-             checked_out_at = $2,
-             checked_out_by = $3,
-             updated_at = NOW()
-         WHERE id = $1`, [id, nowIso, actorUserId]);
+            if (isPermanentOutGatepass(gatepass)) {
+                await client.query(`UPDATE gatepasses
+           SET status = 'completed',
+               checked_out_at = $2,
+               checked_out_by = $3,
+               total_minutes_outside = 0,
+               updated_at = NOW()
+           WHERE id = $1`, [id, nowIso, actorUserId]);
+            }
+            else {
+                await client.query(`UPDATE gatepasses
+           SET status = 'active',
+               checked_out_at = $2,
+               checked_out_by = $3,
+               updated_at = NOW()
+           WHERE id = $1`, [id, nowIso, actorUserId]);
+            }
         }
         else if (actorRole === 'gatekeeper' && input.status === 'completed') {
+            if (isPermanentOutGatepass(gatepass)) {
+                throw new Error('Out reason is permanent for the day — check-in is not allowed');
+            }
             if (gatepass.status !== 'active' || !gatepass.checked_out_at) {
                 throw new Error('Only active gatepasses can be marked In');
             }
             const checkedOutAt = new Date(gatepass.checked_out_at);
             const checkedInAt = new Date(nowIso);
-            const totalMinutesOutside = calculateWorkingMinutesOutside(checkedOutAt, checkedInAt);
+            // 'out' type users leave permanently — no extra time is tracked
+            const totalMinutesOutside = gatepass.gatepass_type !== 'out'
+                ? calculateWorkingMinutesOutside(checkedOutAt, checkedInAt)
+                : 0;
             await client.query(`UPDATE gatepasses
          SET status = 'completed',
              checked_in_at = $2,

@@ -1,0 +1,1 @@
+{"version":3,"file":"get-gatepass-by-id.service.d.ts","sourceRoot":"","sources":["../../../../src/modules/gatepass/service/get-gatepass-by-id.service.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAE,mBAAmB,EAAE,QAAQ,EAAE,MAAM,gBAAgB,CAAC;AAEpE,eAAO,MAAM,eAAe,GAC1B,IAAI,MAAM,EACV,aAAa,MAAM,EACnB,WAAW,QAAQ,KAClB,OAAO,CAAC,mBAAmB,CAkB7B,CAAC"}

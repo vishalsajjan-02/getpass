@@ -1,18 +1,34 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __exportStar = (this && this.__exportStar) || function(m, exports) {
-    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-__exportStar(require("./gatepass.controller"), exports);
+exports.remove = exports.updateStatus = exports.create = exports.getOne = exports.getLiveEmployeeStatuses = exports.getLunchEmployeeDetailReport = exports.getYearlyLunchReport = exports.getMonthlyLunchReport = exports.getLunchAnalyticsRangeReport = exports.getDailyLunchReport = exports.getReasons = exports.getStats = exports.search = exports.getToday = exports.getAll = void 0;
+var get_all_gatepasses_controller_1 = require("./get-all-gatepasses.controller");
+Object.defineProperty(exports, "getAll", { enumerable: true, get: function () { return get_all_gatepasses_controller_1.getAll; } });
+var get_todays_gatepasses_controller_1 = require("./get-todays-gatepasses.controller");
+Object.defineProperty(exports, "getToday", { enumerable: true, get: function () { return get_todays_gatepasses_controller_1.getToday; } });
+var search_gatepasses_controller_1 = require("./search-gatepasses.controller");
+Object.defineProperty(exports, "search", { enumerable: true, get: function () { return search_gatepasses_controller_1.search; } });
+var get_gatepass_stats_controller_1 = require("./get-gatepass-stats.controller");
+Object.defineProperty(exports, "getStats", { enumerable: true, get: function () { return get_gatepass_stats_controller_1.getStats; } });
+var get_gatepass_reasons_controller_1 = require("./get-gatepass-reasons.controller");
+Object.defineProperty(exports, "getReasons", { enumerable: true, get: function () { return get_gatepass_reasons_controller_1.getReasons; } });
+var get_daily_lunch_report_controller_1 = require("./get-daily-lunch-report.controller");
+Object.defineProperty(exports, "getDailyLunchReport", { enumerable: true, get: function () { return get_daily_lunch_report_controller_1.getDailyLunchReport; } });
+var get_lunch_analytics_range_report_controller_1 = require("./get-lunch-analytics-range-report.controller");
+Object.defineProperty(exports, "getLunchAnalyticsRangeReport", { enumerable: true, get: function () { return get_lunch_analytics_range_report_controller_1.getLunchAnalyticsRangeReport; } });
+var get_monthly_lunch_report_controller_1 = require("./get-monthly-lunch-report.controller");
+Object.defineProperty(exports, "getMonthlyLunchReport", { enumerable: true, get: function () { return get_monthly_lunch_report_controller_1.getMonthlyLunchReport; } });
+var get_yearly_lunch_report_controller_1 = require("./get-yearly-lunch-report.controller");
+Object.defineProperty(exports, "getYearlyLunchReport", { enumerable: true, get: function () { return get_yearly_lunch_report_controller_1.getYearlyLunchReport; } });
+var get_lunch_employee_detail_report_controller_1 = require("./get-lunch-employee-detail-report.controller");
+Object.defineProperty(exports, "getLunchEmployeeDetailReport", { enumerable: true, get: function () { return get_lunch_employee_detail_report_controller_1.getLunchEmployeeDetailReport; } });
+var get_live_employee_statuses_controller_1 = require("./get-live-employee-statuses.controller");
+Object.defineProperty(exports, "getLiveEmployeeStatuses", { enumerable: true, get: function () { return get_live_employee_statuses_controller_1.getLiveEmployeeStatuses; } });
+var get_gatepass_by_id_controller_1 = require("./get-gatepass-by-id.controller");
+Object.defineProperty(exports, "getOne", { enumerable: true, get: function () { return get_gatepass_by_id_controller_1.getOne; } });
+var create_gatepass_controller_1 = require("./create-gatepass.controller");
+Object.defineProperty(exports, "create", { enumerable: true, get: function () { return create_gatepass_controller_1.create; } });
+var update_gatepass_status_controller_1 = require("./update-gatepass-status.controller");
+Object.defineProperty(exports, "updateStatus", { enumerable: true, get: function () { return update_gatepass_status_controller_1.updateStatus; } });
+var delete_gatepass_controller_1 = require("./delete-gatepass.controller");
+Object.defineProperty(exports, "remove", { enumerable: true, get: function () { return delete_gatepass_controller_1.remove; } });
 //# sourceMappingURL=index.js.map

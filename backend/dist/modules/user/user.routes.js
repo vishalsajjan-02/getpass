@@ -43,6 +43,7 @@ router.get('/roles', (0, role_middleware_1.requireRole)('admin', 'manager'), Use
 router.get('/managers', (0, role_middleware_1.requireRole)('admin', 'manager'), UserController.getManagers);
 router.get('/departments', (0, role_middleware_1.requireRole)('admin', 'manager'), UserController.getDepartments);
 router.get('/', (0, role_middleware_1.requireRole)('admin', 'manager'), UserController.getAll);
+router.post('/bulk-import', (0, role_middleware_1.requireRole)('admin', 'manager'), UserController.bulkImport);
 router.post('/', (0, role_middleware_1.requireRole)('admin', 'manager'), UserController.create);
 router.get('/:id', UserController.getOne);
 router.put('/:id', UserController.update);

@@ -1,6 +1,7 @@
 export type UserRole = 'admin' | 'manager' | 'gatekeeper' | 'employee' | 'guest';
 export type GatepassStatus = 'pending' | 'pending_manager_approval' | 'pending_admin_approval' | 'approved' | 'rejected' | 'cancelled' | 'active' | 'completed';
 export type ApprovalFlow = 'admin_only' | 'manager_then_admin';
+export type GatepassType = 'out-in' | 'out';
 export type ApprovalRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 export type EmployeeLiveStatus = 'On Lunch' | 'In Office' | 'Outside Office';
 export interface User {
@@ -29,6 +30,7 @@ export interface Gatepass {
     date: string;
     status: GatepassStatus;
     approval_flow: ApprovalFlow;
+    gatepass_type: GatepassType;
     rejection_reason?: string;
     is_emergency: boolean;
     checked_out_at?: string;
@@ -180,6 +182,27 @@ export interface LunchEmployeeDetailReport {
     lunch_entries: LunchEntryReport[];
     activity_logs: LunchActivityLog[];
 }
+export interface UserInOutTime {
+    id: string;
+    user_id: string;
+    date: string;
+    in_time?: string;
+    out_time?: string;
+    created_at: string;
+    updated_at: string;
+}
+export interface UserInOutTimeReportRow {
+    user_id: string;
+    user_name: string;
+    email: string;
+    role: UserRole;
+    department?: string;
+    date: string;
+    entry_id?: string;
+    in_time?: string;
+    out_time?: string;
+    updated_at?: string;
+}
 export interface AuthPayload {
     userId: string;
     email: string;
@@ -199,6 +222,22 @@ export interface CreateUserInput {
     department_id?: string;
     manager_id?: string;
 }
+export interface BulkImportUserInput {
+    name: string;
+    email: string;
+    password: string;
+    role: UserRole;
+    department?: string;
+    manager_email?: string;
+}
+export interface BulkImportUsersResult {
+    created: number;
+    failed: number;
+    errors: Array<{
+        email: string;
+        message: string;
+    }>;
+}
 export interface UpdateUserInput {
     name?: string;
     email?: string;
@@ -214,6 +253,7 @@ export interface CreateGatepassInput {
     destination?: string;
     date?: string;
     is_emergency?: boolean;
+    gatepass_type?: GatepassType;
 }
 export interface UpdateGatepassStatusInput {
     status: GatepassStatus;

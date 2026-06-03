@@ -64,6 +64,8 @@ exports.schema = [
     approval_flow         TEXT        NOT NULL DEFAULT 'admin_only'
                           CHECK(approval_flow IN ('admin_only', 'manager_then_admin')),
     rejection_reason      TEXT,
+    gatepass_type         VARCHAR(10) NOT NULL DEFAULT 'out-in'
+                          CHECK(gatepass_type IN ('out-in', 'out')),
     is_emergency          BOOLEAN     NOT NULL DEFAULT FALSE,
     checked_out_at        TIMESTAMPTZ,
     checked_out_by        UUID        REFERENCES users(id) ON DELETE SET NULL,
@@ -96,6 +98,21 @@ exports.schema = [
     UNIQUE(gatepass_id, approver_user_id),
     UNIQUE(gatepass_id, step)
   )`,
+    // ── User in / out times ────────────────────────────────────────────────────
+    //
+    //  Tracks each user's daily office check-in and check-out timestamps.
+    //  One row per user per date (enforced by the UNIQUE constraint).
+    `CREATE TABLE IF NOT EXISTS user_in_out_time (
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date       DATE        NOT NULL,
+    in_time    TIMESTAMPTZ,
+    out_time   TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, date),
+    CHECK (out_time IS NULL OR in_time IS NULL OR out_time >= in_time)
+  )`,
     // ── Indexes ────────────────────────────────────────────────────────────────
     `CREATE INDEX IF NOT EXISTS idx_gatepasses_user_id
     ON gatepasses(user_id)`,
@@ -119,5 +136,11 @@ exports.schema = [
     ON gatepass_approval_requests(status)`,
     `CREATE INDEX IF NOT EXISTS idx_approval_requests_gatepass_step
     ON gatepass_approval_requests(gatepass_id, step)`,
+    `CREATE INDEX IF NOT EXISTS idx_user_in_out_time_user_id
+    ON user_in_out_time(user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_user_in_out_time_date
+    ON user_in_out_time(date)`,
+    `CREATE INDEX IF NOT EXISTS idx_user_in_out_time_user_date
+    ON user_in_out_time(user_id, date DESC)`,
 ];
 //# sourceMappingURL=schema.js.map
