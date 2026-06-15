@@ -382,6 +382,14 @@ export const calculateMinutesBetween = (startValue?: string, endValue?: string, 
 export const calculateExtraLunchMinutes = (durationMinutes: number): number =>
   Math.max(0, durationMinutes - LUNCH_LIMIT_MINUTES);
 
+// When a user leaves for lunch without returning, cap extra time at 6 PM of the checkout day.
+export const getLunchFallbackEnd = (checkedOutAt?: string): Date => {
+  const checkout = parseTimestamp(checkedOutAt);
+  const base = checkout ? new Date(checkout) : new Date();
+  base.setHours(WORKDAY_END_HOUR, 0, 0, 0);
+  return base;
+};
+
 export const parseDateParam = (value: string | undefined, fallback: Date): string => {
   if (!value) return fallback.toISOString().slice(0, 10);
   const parsed = new Date(value);
@@ -485,7 +493,7 @@ export const getLiveEmployeeStatusesInternal = async (
         : 'In Office';
 
     const lunchDurationMinutes = onLunch
-      ? calculateMinutesBetween(checkedOutAt, undefined, new Date())
+      ? calculateMinutesBetween(checkedOutAt, undefined, getLunchFallbackEnd(checkedOutAt))
       : 0;
 
     return {
@@ -591,7 +599,7 @@ export const getEmployeeActivityLogsInRange = async (
     const checkedOutAt = optionalString(row.checked_out_at);
     const checkedInAt = optionalString(row.checked_in_at);
     const lunchDurationMinutes = reasonName.toLowerCase() === LUNCH_REASON_NAME
-      ? calculateMinutesBetween(checkedOutAt, checkedInAt, new Date())
+      ? calculateMinutesBetween(checkedOutAt, checkedInAt, getLunchFallbackEnd(checkedOutAt))
       : 0;
     const extraLunchMinutes = reasonName.toLowerCase() === LUNCH_REASON_NAME
       ? calculateExtraLunchMinutes(lunchDurationMinutes)
@@ -637,7 +645,7 @@ export const buildLunchEmployeeSummaries = (
   for (const entry of entries) {
     const isLunchEntry = entry.reason_name.trim().toLowerCase() === LUNCH_REASON_NAME;
     const durationMinutes = isLunchEntry
-      ? calculateMinutesBetween(entry.checked_out_at, entry.checked_in_at, new Date())
+      ? calculateMinutesBetween(entry.checked_out_at, entry.checked_in_at, getLunchFallbackEnd(entry.checked_out_at))
       : 0;
     const extraLunchMinutes = isLunchEntry ? calculateExtraLunchMinutes(durationMinutes) : 0;
     const entryCurrentStatus: EmployeeLiveStatus =

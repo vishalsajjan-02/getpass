@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 interface GatepassListProps {
   gatepasses: any[];
   onViewDetails: (gatepass: any) => void;
-  getStatusBadge: (status: string) => React.ReactNode;
+  getStatusBadge: (gatepass: any) => React.ReactNode;
   renderRowActions?: (gatepass: any) => React.ReactNode;
   showRequesterName?: boolean;
   title?: string;

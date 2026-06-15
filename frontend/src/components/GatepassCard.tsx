@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 interface GatepassCardProps {
   gatepass: any;
   onViewDetails: (gatepass: any) => void;
-  getStatusBadge: (status: string) => React.ReactNode;
+  getStatusBadge: (gatepass: any) => React.ReactNode;
   /** Extra actions (e.g. approve / reject) shown before the view button. */
   renderActions?: (gatepass: any) => React.ReactNode;
   /** Show requester name before the date (manager / admin lists). */
@@ -132,7 +132,7 @@ const GatepassCard: React.FC<GatepassCardProps> = ({
       </div>
 
       <div className="ml-auto flex shrink-0 items-center gap-1.5 self-center">
-        {getStatusBadge(gatepass.status)}
+        {getStatusBadge(gatepass)}
         {renderActions?.(gatepass)}
         <Button
           size="icon"

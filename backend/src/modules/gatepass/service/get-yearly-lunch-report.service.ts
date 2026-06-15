@@ -6,6 +6,7 @@ import {
   filterEmployeesWithHistory,
   getLiveEmployeeStatusesInternal,
   getLunchEntriesInRange,
+  getLunchFallbackEnd,
   getTopLunchViolators,
   LUNCH_LIMIT_MINUTES,
   LUNCH_REASON_NAME,
@@ -42,7 +43,7 @@ export const getYearlyLunchReport = async (
     const monthLabel = checkedOutAt
       ? `${checkedOutAt.getFullYear()}-${String(checkedOutAt.getMonth() + 1).padStart(2, '0')}`
       : String(entry.date).slice(0, 7);
-    const durationMinutes = calculateMinutesBetween(entry.checked_out_at, entry.checked_in_at, new Date());
+    const durationMinutes = calculateMinutesBetween(entry.checked_out_at, entry.checked_in_at, getLunchFallbackEnd(entry.checked_out_at));
     const extraLunchMinutes = calculateExtraLunchMinutes(durationMinutes);
     const existing = monthMap.get(monthLabel) ?? {
       month: monthLabel,

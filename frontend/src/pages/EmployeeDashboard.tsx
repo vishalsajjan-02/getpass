@@ -80,13 +80,29 @@ const EmployeeDashboard = () => {
 
   const badgeClass = 'text-[11px] px-2 py-0.5 font-medium whitespace-nowrap';
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (gatepass: any) => {
+    const { status, approval_flow, approval_requests } = gatepass;
+
+    if (approval_flow === 'manager_then_admin') {
+      const managerPending = approval_requests?.some((r: any) => r.step === 1 && r.status === 'pending');
+      const adminPending = approval_requests?.some((r: any) => r.step === 2 && r.status === 'pending');
+      if (managerPending || adminPending) {
+        return (
+          <div className="flex gap-1 flex-wrap">
+            {managerPending && <Badge className={`${badgeClass} bg-amber-100 text-amber-800 border-amber-200`}>Pending for Manager</Badge>}
+            {adminPending && <Badge className={`${badgeClass} bg-purple-100 text-purple-800 border-purple-200`}>Pending for Admin</Badge>}
+          </div>
+        );
+      }
+    }
+
     switch (status) {
       case 'approved':
         return <Badge className={`${badgeClass} bg-green-100 text-green-700 border-green-200`}>Approved</Badge>;
       case 'pending_manager_approval':
-        return <Badge className={`${badgeClass} bg-amber-100 text-amber-800 border-amber-200`}>Pending Manager</Badge>;
+        return <Badge className={`${badgeClass} bg-amber-100 text-amber-800 border-amber-200`}>Pending for Manager</Badge>;
       case 'pending_admin_approval':
+        return <Badge className={`${badgeClass} bg-purple-100 text-purple-800 border-purple-200`}>Pending for Admin</Badge>;
       case 'pending':
         return <Badge className={`${badgeClass} bg-orange-100 text-orange-700 border-orange-200`}>Pending</Badge>;
       case 'rejected':

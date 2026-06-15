@@ -2,8 +2,8 @@ import type { Gatepass, GatepassStatus } from '@/hooks/useGatepasses';
 
 const STATUS_LABELS: Record<GatepassStatus, string> = {
   pending: 'Pending',
-  pending_manager_approval: 'Pending Manager Approval',
-  pending_admin_approval: 'Pending Admin Approval',
+  pending_manager_approval: 'Pending for Manager',
+  pending_admin_approval: 'Pending for Admin',
   approved: 'Approved',
   rejected: 'Rejected',
   cancelled: 'Cancelled',

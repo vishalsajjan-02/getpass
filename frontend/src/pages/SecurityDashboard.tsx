@@ -106,17 +106,31 @@ const SecurityDashboard = () => {
     return matchesHistorySearch && matchesDateFrom && matchesDateTo;
   });
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (gatepass: any) => {
+    const { status, approval_flow, approval_requests } = gatepass;
     const badgeClass: Record<string, string> = {
       approved: 'bg-gradient-to-r from-green-100 to-green-200 text-green-700 border-green-300',
       active: 'bg-gradient-to-r from-blue-100 to-blue-200 text-blue-700 border-blue-300',
       completed: 'bg-gradient-to-r from-emerald-100 to-emerald-200 text-emerald-800 border-emerald-300',
       pending: 'bg-gradient-to-r from-orange-100 to-orange-200 text-orange-700 border-orange-300',
       pending_manager_approval: 'bg-gradient-to-r from-amber-100 to-amber-200 text-amber-700 border-amber-300',
-      pending_admin_approval: 'bg-gradient-to-r from-orange-100 to-orange-200 text-orange-700 border-orange-300',
+      pending_admin_approval: 'bg-gradient-to-r from-purple-100 to-purple-200 text-purple-800 border-purple-300',
       rejected: 'bg-gradient-to-r from-red-100 to-red-200 text-red-700 border-red-300',
       cancelled: 'bg-gradient-to-r from-rose-100 to-rose-200 text-rose-700 border-rose-300',
     };
+
+    if (approval_flow === 'manager_then_admin') {
+      const managerPending = approval_requests?.some((r: any) => r.step === 1 && r.status === 'pending');
+      const adminPending = approval_requests?.some((r: any) => r.step === 2 && r.status === 'pending');
+      if (managerPending || adminPending) {
+        return (
+          <div className="flex gap-1 flex-wrap">
+            {managerPending && <Badge className={badgeClass.pending_manager_approval}>Pending for Manager</Badge>}
+            {adminPending && <Badge className={badgeClass.pending_admin_approval}>Pending for Admin</Badge>}
+          </div>
+        );
+      }
+    }
 
     return (
       <Badge className={badgeClass[status] ?? 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 border-gray-300'}>
@@ -308,7 +322,7 @@ const SecurityDashboard = () => {
                         )}
                       </span>
                     )}
-                    <span className="shrink-0">{getStatusBadge(gatepass.status)}</span>
+                    <span className="shrink-0">{getStatusBadge(gatepass)}</span>
                     {gatepass.status === 'approved' && (
                       <Button
                         onClick={() => handleOut(gatepass.id)}

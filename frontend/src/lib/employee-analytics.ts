@@ -25,10 +25,18 @@ const parseTimestamp = (value?: string): number | null => {
   return Number.isNaN(time) ? null : time;
 };
 
+// When no check-in recorded, cap extra time at 6 PM of the checkout day.
+const getLunchFallbackEnd = (checkedOutAt?: string): number => {
+  const checkout = parseTimestamp(checkedOutAt);
+  const base = checkout !== null ? new Date(checkout) : new Date();
+  base.setHours(18, 0, 0, 0);
+  return base.getTime();
+};
+
 export const calculateLunchDurationMinutes = (gatepass: Gatepass): number => {
   const start = parseTimestamp(gatepass.checked_out_at);
   if (start === null) return 0;
-  const end = parseTimestamp(gatepass.checked_in_at) ?? Date.now();
+  const end = parseTimestamp(gatepass.checked_in_at) ?? getLunchFallbackEnd(gatepass.checked_out_at);
   return Math.max(0, Math.floor((end - start) / 60000));
 };
 
