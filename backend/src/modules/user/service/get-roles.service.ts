@@ -4,6 +4,7 @@ import type { RoleOption } from '../../../types';
 export const getRoles = async (): Promise<RoleOption[]> => {
   const result = await getDb().query(
     `SELECT id AS role_id, name FROM roles
+     WHERE deleted_at IS NULL
      ORDER BY CASE name
        WHEN 'admin'      THEN 1
        WHEN 'manager'    THEN 2

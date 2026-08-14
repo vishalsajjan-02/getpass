@@ -60,6 +60,29 @@ export const optionalString = (value: unknown): string | undefined => {
   return trimmed ? trimmed : undefined;
 };
 
+const toDateKey = (value: unknown): string => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  const raw = String(value ?? '').trim();
+  const prefix = raw.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(prefix)) return prefix;
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  return raw;
+};
+
 export const isPermanentOutGatepass = (gatepass: Pick<Gatepass, 'gatepass_type' | 'reason_name'>): boolean =>
   gatepass.gatepass_type === 'out' || gatepass.reason_name.trim().toLowerCase() === 'out';
 
@@ -76,7 +99,7 @@ const rowToGatepass = (row: Record<string, unknown>): Gatepass => ({
   display_reason: String(row.display_reason),
   reason_description: optionalString(row.reason_description),
   destination: optionalString(row.destination),
-  date: String(row.date),
+  date: toDateKey(row.date),
   status: row.status as GatepassStatus,
   approval_flow: row.approval_flow as ApprovalFlow,
   gatepass_type: (row.gatepass_type as GatepassType) ?? 'out-in',
@@ -153,9 +176,9 @@ const BASE_QUERY = `
     ) AS approval_requests
   FROM gatepasses g
   JOIN gatepass_reasons gr ON gr.id = g.reason_id
-  LEFT JOIN users u ON u.id = g.user_id
-  LEFT JOIN departments d ON d.id = u.department_id
-  LEFT JOIN gatepass_approval_requests gar ON gar.gatepass_id = g.id
+  LEFT JOIN users u ON u.id = g.user_id AND u.deleted_at IS NULL
+  LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL
+  LEFT JOIN gatepass_approval_requests gar ON gar.gatepass_id = g.id AND gar.deleted_at IS NULL
 `;
 
 const GROUP_BY = `
@@ -181,6 +204,7 @@ export const buildVisibilityClause = (
           FROM gatepass_approval_requests gar_scope
           WHERE gar_scope.gatepass_id = g.id
             AND gar_scope.approver_user_id = $${startingParamIndex}
+            AND gar_scope.deleted_at IS NULL
         ))`,
         params: [userId],
       };
@@ -190,7 +214,8 @@ export const buildVisibilityClause = (
 };
 
 const buildQuery = (conditions: string[]): string => {
-  const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
+  const all = ['g.deleted_at IS NULL', ...conditions];
+  const where = ` WHERE ${all.join(' AND ')}`;
   return `${BASE_QUERY}${where}${GROUP_BY} ORDER BY g.created_at DESC`;
 };
 
@@ -204,7 +229,10 @@ export const runGatepassQuery = async (
 };
 
 export const getGatepassByIdInternal = async (db: Queryable, id: string): Promise<GatepassWithProfile> => {
-  const result = await db.query(`${BASE_QUERY} WHERE g.id = $1${GROUP_BY}`, [id]);
+  const result = await db.query(
+    `${BASE_QUERY} WHERE g.id = $1 AND g.deleted_at IS NULL${GROUP_BY}`,
+    [id],
+  );
   const row = result.rows[0];
   if (!row) throw new Error('Gatepass not found');
   return withProfile(row);
@@ -214,8 +242,8 @@ export const getRequesterContext = async (db: Queryable, userId: string): Promis
   const result = await db.query(
     `SELECT u.id, r.name AS role, u.manager_id
      FROM users u
-     JOIN roles r ON r.id = u.role_id
-     WHERE u.id = $1`,
+     JOIN roles r ON r.id = u.role_id AND r.deleted_at IS NULL
+     WHERE u.id = $1 AND u.deleted_at IS NULL`,
     [userId],
   );
   const row = result.rows[0];
@@ -231,8 +259,8 @@ export const getPrimaryAdminId = async (db: Queryable): Promise<string> => {
   const result = await db.query(
     `SELECT u.id
      FROM users u
-     JOIN roles r ON r.id = u.role_id
-     WHERE r.name = 'admin'
+     JOIN roles r ON r.id = u.role_id AND r.deleted_at IS NULL
+     WHERE r.name = 'admin' AND u.deleted_at IS NULL
      ORDER BY u.created_at ASC
      LIMIT 1`,
   );
@@ -246,7 +274,7 @@ export const resolveReason = async (db: Queryable, input: CreateGatepassInput): 
     const result = await db.query(
       `SELECT id, name
        FROM gatepass_reasons
-       WHERE id = $1`,
+       WHERE id = $1 AND deleted_at IS NULL`,
       [input.reason_id],
     );
     const row = result.rows[0];
@@ -262,7 +290,7 @@ export const resolveReason = async (db: Queryable, input: CreateGatepassInput): 
   const result = await db.query(
     `SELECT id, name
      FROM gatepass_reasons
-     WHERE LOWER(name) = LOWER($1)`,
+     WHERE LOWER(name) = LOWER($1) AND deleted_at IS NULL`,
     [reasonName],
   );
   const row = result.rows[0];
@@ -276,16 +304,33 @@ export const getPendingApprovalForActor = async (
   actorUserId: string,
   approverRole: 'admin' | 'manager',
 ): Promise<GatepassApprovalRequest> => {
-  const result = await db.query(
-    `SELECT id, gatepass_id, approver_user_id, approver_role, step, status,
-            remarks, acted_at, created_at, updated_at
-     FROM gatepass_approval_requests
-     WHERE gatepass_id = $1
-       AND approver_user_id = $2
-       AND approver_role = $3
-     LIMIT 1`,
-    [gatepassId, actorUserId, approverRole],
-  );
+  // Any admin can act on the admin approval step (request may be assigned to primary admin).
+  // Managers must match the assigned approver.
+  const result =
+    approverRole === 'admin'
+      ? await db.query(
+          `SELECT id, gatepass_id, approver_user_id, approver_role, step, status,
+                  remarks, acted_at, created_at, updated_at
+           FROM gatepass_approval_requests
+           WHERE gatepass_id = $1
+             AND approver_role = 'admin'
+             AND deleted_at IS NULL
+           ORDER BY step DESC
+           LIMIT 1`,
+          [gatepassId],
+        )
+      : await db.query(
+          `SELECT id, gatepass_id, approver_user_id, approver_role, step, status,
+                  remarks, acted_at, created_at, updated_at
+           FROM gatepass_approval_requests
+           WHERE gatepass_id = $1
+             AND approver_user_id = $2
+             AND approver_role = 'manager'
+             AND deleted_at IS NULL
+           LIMIT 1`,
+          [gatepassId, actorUserId],
+        );
+
   const row = result.rows[0];
   if (!row) throw new Error(`No ${approverRole} approval request found for this gatepass`);
   return row as unknown as GatepassApprovalRequest;
@@ -302,6 +347,7 @@ export const getApprovalRequestByStep = async (
      FROM gatepass_approval_requests
      WHERE gatepass_id = $1
        AND step = $2
+       AND deleted_at IS NULL
      LIMIT 1`,
     [gatepassId, step],
   );
@@ -321,36 +367,15 @@ export const cancelPendingApprovalRequests = async (
          remarks = COALESCE(remarks, $2),
          updated_at = NOW()
      WHERE gatepass_id = $1
-       AND status = 'pending'`,
+       AND status = 'pending'
+       AND deleted_at IS NULL`,
     [gatepassId, remarks],
   );
 };
 
 export const calculateWorkingMinutesOutside = (checkedOutAt: Date, checkedInAt: Date): number => {
   if (checkedInAt <= checkedOutAt) return 0;
-
-  let totalMinutes = 0;
-  let cursor = new Date(checkedOutAt);
-
-  while (cursor < checkedInAt) {
-    const workdayStart = new Date(cursor);
-    workdayStart.setHours(WORKDAY_START_HOUR, 0, 0, 0);
-
-    const workdayEnd = new Date(cursor);
-    workdayEnd.setHours(WORKDAY_END_HOUR, 0, 0, 0);
-
-    const overlapStart = new Date(Math.max(checkedOutAt.getTime(), workdayStart.getTime()));
-    const overlapEnd = new Date(Math.min(checkedInAt.getTime(), workdayEnd.getTime()));
-
-    if (overlapEnd > overlapStart) {
-      totalMinutes += Math.floor((overlapEnd.getTime() - overlapStart.getTime()) / 60000);
-    }
-
-    cursor.setDate(cursor.getDate() + 1);
-    cursor.setHours(0, 0, 0, 0);
-  }
-
-  return Math.max(totalMinutes, 0);
+  return Math.max(0, Math.floor((checkedInAt.getTime() - checkedOutAt.getTime()) / 60000));
 };
 
 export const emitRealtimeUpdate = (
@@ -459,16 +484,17 @@ export const getLiveEmployeeStatusesInternal = async (
        active.checked_out_at,
        active.checked_in_at
      FROM users u
-     JOIN roles r ON r.id = u.role_id
-     LEFT JOIN departments d ON d.id = u.department_id
+     JOIN roles r ON r.id = u.role_id AND r.deleted_at IS NULL
+     LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL
      LEFT JOIN LATERAL (
        SELECT
          gr.name AS reason_name,
          g.checked_out_at,
          g.checked_in_at
        FROM gatepasses g
-       JOIN gatepass_reasons gr ON gr.id = g.reason_id
+       JOIN gatepass_reasons gr ON gr.id = g.reason_id AND gr.deleted_at IS NULL
        WHERE g.user_id = u.id
+         AND g.deleted_at IS NULL
          AND g.status = 'active'
          AND g.checked_out_at IS NOT NULL
          AND g.checked_in_at IS NULL
@@ -476,6 +502,7 @@ export const getLiveEmployeeStatusesInternal = async (
        LIMIT 1
      ) active ON TRUE
      WHERE r.name IN ('employee', 'manager')
+       AND u.deleted_at IS NULL
      ${employeeFilter}
      ORDER BY u.name`,
     params,
@@ -534,11 +561,12 @@ export const getLunchEntriesInRange = async (
        g.checked_in_at,
        g.total_minutes_outside
      FROM gatepasses g
-     JOIN gatepass_reasons gr ON gr.id = g.reason_id
-     JOIN users u ON u.id = g.user_id
-     JOIN roles r ON r.id = u.role_id
-     LEFT JOIN departments d ON d.id = u.department_id
-     WHERE g.date BETWEEN $1 AND $2
+     JOIN gatepass_reasons gr ON gr.id = g.reason_id AND gr.deleted_at IS NULL
+     JOIN users u ON u.id = g.user_id AND u.deleted_at IS NULL
+     JOIN roles r ON r.id = u.role_id AND r.deleted_at IS NULL
+     LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL
+     WHERE g.deleted_at IS NULL
+       AND g.date BETWEEN $1 AND $2
        AND r.name IN ('employee', 'manager')
        AND (
          g.checked_out_at IS NOT NULL
@@ -556,7 +584,7 @@ export const getLunchEntriesInRange = async (
     employee_name: String(row.employee_name),
     department: optionalString(row.department),
     id: String(row.id),
-    date: String(row.date),
+    date: toDateKey(row.date),
     reason_name: String(row.reason_name),
     status: row.status as GatepassStatus,
     checked_out_at: optionalString(row.checked_out_at),
@@ -582,8 +610,9 @@ export const getEmployeeActivityLogsInRange = async (
        g.checked_in_at,
        g.total_minutes_outside
      FROM gatepasses g
-     JOIN gatepass_reasons gr ON gr.id = g.reason_id
+     JOIN gatepass_reasons gr ON gr.id = g.reason_id AND gr.deleted_at IS NULL
      WHERE g.user_id = $1
+       AND g.deleted_at IS NULL
        AND g.date BETWEEN $2 AND $3
        AND (
          g.checked_out_at IS NOT NULL
@@ -607,7 +636,7 @@ export const getEmployeeActivityLogsInRange = async (
 
     return {
       id: String(row.id),
-      date: String(row.date),
+      date: toDateKey(row.date),
       reason_name: reasonName,
       reason_description: optionalString(row.reason_description),
       status: row.status as GatepassStatus,

@@ -1,33 +1,65 @@
 {
   "expo": {
-    "name": "Gatepass Nexus",
-    "slug": "gatepass-nexus",
+    "name": "Gatepass",
+    "slug": "gatepass-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "scheme": "gatepass",
     "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ea580c"
+      "backgroundColor": "#f97316"
     },
+    "plugins": [
+      "expo-asset",
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow Gatepass to take photos for face attendance.",
+          "photosPermission": "Allow Gatepass to access photos for face registration."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Gatepass to use the front camera for face attendance.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Gatepass to capture your location when marking attendance."
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.gatepass.nexus"
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Gatepass to take photos for face attendance.",
+        "NSPhotoLibraryUsageDescription": "Allow Gatepass to access photos for face registration.",
+        "NSLocationWhenInUseUsageDescription": "Allow Gatepass to capture your location when marking attendance."
+      }
     },
     "android": {
-      "package": "com.gatepass.nexus",
+      "usesCleartextTraffic": true,
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "INTERNET",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#ea580c",
+        "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "predictiveBackGestureEnabled": false
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
-    "plugins": ["expo-router", "expo-secure-store"]
+    "extra": {
+      "apiUrl": "http://10.42.20.245:3001/api"
+    }
   }
 }

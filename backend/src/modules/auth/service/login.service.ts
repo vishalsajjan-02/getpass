@@ -9,7 +9,7 @@ export const loginWithCredentials = async (
   password: string,
 ): Promise<{ token: string; user: User }> => {
   const result = await getDb().query(
-    `${USER_WITH_PASSWORD_SELECT} WHERE u.email = $1`,
+    `${USER_WITH_PASSWORD_SELECT} WHERE u.email = $1 AND u.deleted_at IS NULL`,
     [email],
   );
   const row = result.rows[0] as UserWithPassword | undefined;
@@ -21,5 +21,14 @@ export const loginWithCredentials = async (
 
   const { password: _pw, ...user } = row;
   const token = signToken({ userId: user.id, email: user.email, role: user.role });
-  return { token, user: user as User };
+  return {
+    token,
+    user: {
+      ...user,
+      can_self_punch: Boolean(user.can_self_punch),
+      face_image_path: user.face_image_path ? String(user.face_image_path) : null,
+      face_image_url: user.face_image_path ? `/uploads/${user.face_image_path}` : null,
+      has_face: Boolean(user.face_image_path),
+    } as User,
+  };
 };

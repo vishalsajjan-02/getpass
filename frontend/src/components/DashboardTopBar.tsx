@@ -13,9 +13,15 @@ const formatRoleLabel = (role?: string): string => {
 interface DashboardTopBarProps {
   onMenuClick?: () => void;
   showMenuButton?: boolean;
+  /** Hide name, avatar, and logout (e.g. gatekeeper — logout moved to bottom). */
+  hideUserActions?: boolean;
 }
 
-const DashboardTopBar: React.FC<DashboardTopBarProps> = ({ onMenuClick, showMenuButton }) => {
+const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
+  onMenuClick,
+  showMenuButton,
+  hideUserActions = false,
+}) => {
   const { user, logout } = useMockAuth();
 
   const handleLogout = async () => {
@@ -55,29 +61,31 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({ onMenuClick, showMenu
         <h1 className={`${portalTitleClass} text-lg md:text-xl truncate`}>Gatepass System</h1>
       </div>
 
-      <div className="flex items-center gap-2 md:gap-3 shrink-0">
-        <span className="text-sm text-gray-700 font-medium truncate max-w-[160px] sm:max-w-[220px] md:max-w-none hidden sm:block">
-          {userLine}
-        </span>
+      {!hideUserActions ? (
+        <div className="flex items-center gap-2 md:gap-3 shrink-0">
+          <span className="text-sm text-gray-700 font-medium truncate max-w-[160px] sm:max-w-[220px] md:max-w-none hidden sm:block">
+            {userLine}
+          </span>
 
-        <Avatar className="h-9 w-9 border border-orange-200 shrink-0">
-          <AvatarFallback className="bg-gradient-to-br from-orange-400 to-rose-500 text-white text-xs font-semibold">
-            {initials}
-          </AvatarFallback>
-        </Avatar>
+          <Avatar className="h-9 w-9 border border-orange-200 shrink-0">
+            <AvatarFallback className="bg-gradient-to-br from-orange-400 to-rose-500 text-white text-xs font-semibold">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={handleLogout}
-          className="h-9 w-9 text-gray-500 hover:text-red-600 hover:bg-red-50 shrink-0"
-          title="Sign out"
-          aria-label="Sign out"
-        >
-          <LogOut className="h-5 w-5" />
-        </Button>
-      </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={handleLogout}
+            className="h-9 w-9 text-gray-500 hover:text-red-600 hover:bg-red-50 shrink-0"
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <LogOut className="h-5 w-5" />
+          </Button>
+        </div>
+      ) : null}
     </header>
   );
 };

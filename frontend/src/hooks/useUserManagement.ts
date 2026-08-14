@@ -13,6 +13,7 @@ export const useCreateUser = () => {
       role: 'admin' | 'manager' | 'gatekeeper' | 'employee' | 'guest';
       department_id?: string;
       manager_id?: string;
+      employee_id?: string | null;
     }) => api.post<Profile>('/users', userData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });
@@ -31,8 +32,9 @@ export const useUpdateUser = () => {
       email?: string;
       password?: string;
       role?: 'admin' | 'manager' | 'gatekeeper' | 'employee' | 'guest';
-      department_id?: string;
-      manager_id?: string;
+      department_id?: string | null;
+      manager_id?: string | null;
+      employee_id?: string | null;
     }) => api.put<Profile>(`/users/${id}`, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });
@@ -50,6 +52,7 @@ export const useUpdateProfile = () => {
       name?: string;
       email?: string;
       department_id?: string;
+      employee_id?: string | null;
     }) => api.put<Profile>(`/users/${id}`, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });
@@ -74,6 +77,8 @@ export const useBulkImportUsers = () => {
       role: 'admin' | 'manager' | 'gatekeeper' | 'employee' | 'guest';
       department?: string;
       manager_email?: string;
+      employee_id?: string;
+      leave_balance?: number;
     }>) => api.post<BulkImportUsersResult>('/users/bulk-import', { users }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });

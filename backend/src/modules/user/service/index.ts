@@ -7,3 +7,4 @@ export { createUser } from './create-user.service';
 export { updateUser } from './update-user.service';
 export { deleteUser } from './delete-user.service';
 export { bulkImportUsers } from './bulk-import-users.service';
+export { setPunchPermission } from './set-punch-permission.service';

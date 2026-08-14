@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.emitGatepassSocketEvent = exports.initSocketServer = void 0;
+exports.emitPunchPermissionSocketEvent = exports.emitAttendanceSocketEvent = exports.emitGatepassSocketEvent = exports.initSocketServer = void 0;
 const socket_io_1 = require("socket.io");
 const jwt_utils_1 = require("../utils/jwt.utils");
 const roleRoom = (role) => `role:${role}`;
@@ -77,4 +77,33 @@ const emitGatepassSocketEvent = (eventName, gatepass) => {
     }
 };
 exports.emitGatepassSocketEvent = emitGatepassSocketEvent;
+/** Notify the employee (+ attendance viewers) when in/out status changes. */
+const emitAttendanceSocketEvent = (attendance) => {
+    if (!io)
+        return;
+    const payload = {
+        event: 'attendance:updated',
+        attendance,
+    };
+    const rooms = [
+        userRoom(attendance.user_id),
+        roleRoom('admin'),
+        roleRoom('manager'),
+        roleRoom('gatekeeper'),
+    ];
+    for (const room of rooms) {
+        io.to(room).emit('attendance:updated', payload);
+    }
+};
+exports.emitAttendanceSocketEvent = emitAttendanceSocketEvent;
+/** Notify a user when admin toggles their self-punch permission. */
+const emitPunchPermissionSocketEvent = (payload) => {
+    if (!io)
+        return;
+    io.to(userRoom(payload.user_id)).emit('user:punch-permission', {
+        event: 'user:punch-permission',
+        permission: payload,
+    });
+};
+exports.emitPunchPermissionSocketEvent = emitPunchPermissionSocketEvent;
 //# sourceMappingURL=socket.js.map

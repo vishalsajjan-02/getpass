@@ -13,6 +13,7 @@ import {
   formatGatepassReason,
   getGatepassStatusLabel,
   isPermanentOutGatepass,
+  resolveOutsideMinutes,
 } from '@/lib/gatepass';
 
 interface GatepassDetailsModalProps {
@@ -82,7 +83,7 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
       case 'cancelled':
         return <Badge className="bg-rose-100 text-rose-700 border-rose-300">Cancelled</Badge>;
       case 'active':
-        return <Badge className="bg-blue-100 text-blue-700 border-blue-300">Out</Badge>;
+        return <Badge className="bg-orange-100 text-orange-700 border-orange-300">Out</Badge>;
       case 'completed':
         return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300">Completed</Badge>;
       default:
@@ -200,10 +201,10 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
               </div>
             )}
 
-            {gatepass.total_minutes_outside > 0 && (
-              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                <Label className="text-sm font-medium text-blue-700">Time Outside During Working Hours</Label>
-                <p className="mt-1 text-blue-600">{gatepass.total_minutes_outside} minutes</p>
+            {resolveOutsideMinutes(gatepass) > 0 && (
+              <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                <Label className="text-sm font-medium text-orange-700">Time Outside</Label>
+                <p className="mt-1 text-blue-600">{resolveOutsideMinutes(gatepass)} minutes</p>
               </div>
             )}
           </div>
@@ -212,10 +213,10 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
           {gatepass.is_emergency && (
             <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
               <div className="flex items-center space-x-2">
-                <Clock className="w-5 h-5 text-orange-600" />
+                <Clock className="w-5 h-5 text-blue-600" />
                 <Label className="text-sm font-medium text-orange-700">Emergency Request</Label>
               </div>
-              <p className="mt-1 text-orange-600 text-sm">This request was marked as urgent for immediate attention.</p>
+              <p className="mt-1 text-blue-600 text-sm">This request was marked as urgent for immediate attention.</p>
             </div>
           )}
 
@@ -293,8 +294,8 @@ const GatepassDetailsModal: React.FC<GatepassDetailsModalProps> = ({
 
           {/* Gatekeeper Actions */}
           {userRole === 'gatekeeper' && (
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h4 className="font-medium text-blue-800">Gatekeeper Actions</h4>
+            <div className="bg-orange-50 p-4 rounded-lg">
+              <h4 className="font-medium text-orange-800">Gatekeeper Actions</h4>
               <p className="text-sm text-blue-600 mt-1">
                 {gatepass.status === 'approved'
                   ? isPermanentOutGatepass(gatepass)

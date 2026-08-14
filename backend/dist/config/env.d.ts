@@ -7,5 +7,7 @@ export declare const env: {
     readonly DATABASE_URL: string;
     readonly TIME_FOR_LUNCH: string;
     readonly TIME_FOR_LUNCH_MINUTES: number;
+    readonly FACE_SERVICE_URL: string;
+    readonly FACE_MATCH_THRESHOLD: number;
 };
 //# sourceMappingURL=env.d.ts.map

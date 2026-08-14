@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateGatepassStatus = void 0;
 const database_1 = require("../../../config/database");
 const gatepass_shared_1 = require("./shared/gatepass.shared");
+const user_in_out_time_shared_1 = require("../../userInOutTime/service/shared/user-in-out-time.shared");
 const updateGatepassStatus = async (id, input, actorUserId, actorRole) => {
     const pool = (0, database_1.getDb)();
     const client = await pool.connect();
@@ -110,7 +111,7 @@ const updateGatepassStatus = async (id, input, actorUserId, actorRole) => {
             }
             else {
                 const approvalRequest = await (0, gatepass_shared_1.getPendingApprovalForActor)(client, id, actorUserId, 'admin');
-                if (!['pending_admin_approval', 'pending_manager_approval'].includes(gatepass.status)
+                if (gatepass.status !== 'pending_admin_approval'
                     || approvalRequest.status !== 'pending') {
                     throw new Error('This gatepass is not awaiting admin approval');
                 }
@@ -121,12 +122,10 @@ const updateGatepassStatus = async (id, input, actorUserId, actorRole) => {
                  acted_at = $3,
                  updated_at = NOW()
              WHERE id = $1`, [approvalRequest.id, input.remarks ?? 'Approved by admin', nowIso]);
-                    const managerApprovalPending = gatepass.approval_flow === 'manager_then_admin'
-                        && (await (0, gatepass_shared_1.getApprovalRequestByStep)(client, id, 1)).status === 'pending';
                     await client.query(`UPDATE gatepasses
-             SET status = $2,
+             SET status = 'approved',
                  updated_at = NOW()
-             WHERE id = $1`, [id, managerApprovalPending ? 'pending_manager_approval' : 'approved']);
+             WHERE id = $1`, [id]);
                 }
                 else {
                     await client.query(`UPDATE gatepass_approval_requests
@@ -147,6 +146,10 @@ const updateGatepassStatus = async (id, input, actorUserId, actorRole) => {
         else if (actorRole === 'gatekeeper' && input.status === 'active') {
             if (gatepass.status !== 'approved') {
                 throw new Error('Only approved gatepasses can be marked Out');
+            }
+            const gatepassOwner = await (0, gatepass_shared_1.getRequesterContext)(client, gatepass.user_id);
+            if (gatepassOwner.role !== 'guest') {
+                await (0, user_in_out_time_shared_1.assertUserPresentForGatepass)(client, gatepass.user_id, gatepass.date);
             }
             if ((0, gatepass_shared_1.isPermanentOutGatepass)(gatepass)) {
                 await client.query(`UPDATE gatepasses

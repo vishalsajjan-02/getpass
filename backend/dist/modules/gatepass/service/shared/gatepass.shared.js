@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.buildLunchAnalyticsRangeReport = exports.filterEmployeesWithHistory = exports.getTopLunchViolators = exports.buildLunchEmployeeSummaries = exports.getEmployeeActivityLogsInRange = exports.getLunchEntriesInRange = exports.getLiveEmployeeStatusesInternal = exports.normalizeDateRange = exports.parseYearParam = exports.parseMonthParam = exports.parseDateParam = exports.calculateExtraLunchMinutes = exports.calculateMinutesBetween = exports.parseTimestamp = exports.emitRealtimeUpdate = exports.calculateWorkingMinutesOutside = exports.cancelPendingApprovalRequests = exports.getApprovalRequestByStep = exports.getPendingApprovalForActor = exports.resolveReason = exports.getPrimaryAdminId = exports.getRequesterContext = exports.getGatepassByIdInternal = exports.runGatepassQuery = exports.buildVisibilityClause = exports.isPermanentOutGatepass = exports.optionalString = exports.LUNCH_LIMIT_MINUTES = exports.LUNCH_REASON_NAME = void 0;
+exports.buildLunchAnalyticsRangeReport = exports.filterEmployeesWithHistory = exports.getTopLunchViolators = exports.buildLunchEmployeeSummaries = exports.getEmployeeActivityLogsInRange = exports.getLunchEntriesInRange = exports.getLiveEmployeeStatusesInternal = exports.normalizeDateRange = exports.parseYearParam = exports.parseMonthParam = exports.parseDateParam = exports.getLunchFallbackEnd = exports.calculateExtraLunchMinutes = exports.calculateMinutesBetween = exports.parseTimestamp = exports.emitRealtimeUpdate = exports.calculateWorkingMinutesOutside = exports.cancelPendingApprovalRequests = exports.getApprovalRequestByStep = exports.getPendingApprovalForActor = exports.resolveReason = exports.getPrimaryAdminId = exports.getRequesterContext = exports.getGatepassByIdInternal = exports.runGatepassQuery = exports.buildVisibilityClause = exports.isPermanentOutGatepass = exports.optionalString = exports.LUNCH_LIMIT_MINUTES = exports.LUNCH_REASON_NAME = void 0;
 const database_1 = require("../../../../config/database");
 const env_1 = require("../../../../config/env");
 const socket_1 = require("../../../../realtime/socket");
@@ -15,6 +15,26 @@ const optionalString = (value) => {
     return trimmed ? trimmed : undefined;
 };
 exports.optionalString = optionalString;
+const toDateKey = (value) => {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, '0');
+        const day = String(value.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    const raw = String(value ?? '').trim();
+    const prefix = raw.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(prefix))
+        return prefix;
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+        const year = parsed.getFullYear();
+        const month = String(parsed.getMonth() + 1).padStart(2, '0');
+        const day = String(parsed.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    return raw;
+};
 const isPermanentOutGatepass = (gatepass) => gatepass.gatepass_type === 'out' || gatepass.reason_name.trim().toLowerCase() === 'out';
 exports.isPermanentOutGatepass = isPermanentOutGatepass;
 const toApprovalRequests = (value) => {
@@ -30,7 +50,7 @@ const rowToGatepass = (row) => ({
     display_reason: String(row.display_reason),
     reason_description: (0, exports.optionalString)(row.reason_description),
     destination: (0, exports.optionalString)(row.destination),
-    date: String(row.date),
+    date: toDateKey(row.date),
     status: row.status,
     approval_flow: row.approval_flow,
     gatepass_type: row.gatepass_type ?? 'out-in',
@@ -105,9 +125,9 @@ const BASE_QUERY = `
     ) AS approval_requests
   FROM gatepasses g
   JOIN gatepass_reasons gr ON gr.id = g.reason_id
-  LEFT JOIN users u ON u.id = g.user_id
-  LEFT JOIN departments d ON d.id = u.department_id
-  LEFT JOIN gatepass_approval_requests gar ON gar.gatepass_id = g.id
+  LEFT JOIN users u ON u.id = g.user_id AND u.deleted_at IS NULL
+  LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL
+  LEFT JOIN gatepass_approval_requests gar ON gar.gatepass_id = g.id AND gar.deleted_at IS NULL
 `;
 const GROUP_BY = `
   GROUP BY g.id, gr.name, u.id, d.name
@@ -127,6 +147,7 @@ const buildVisibilityClause = (role, userId, startingParamIndex) => {
           FROM gatepass_approval_requests gar_scope
           WHERE gar_scope.gatepass_id = g.id
             AND gar_scope.approver_user_id = $${startingParamIndex}
+            AND gar_scope.deleted_at IS NULL
         ))`,
                 params: [userId],
             };
@@ -136,7 +157,8 @@ const buildVisibilityClause = (role, userId, startingParamIndex) => {
 };
 exports.buildVisibilityClause = buildVisibilityClause;
 const buildQuery = (conditions) => {
-    const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
+    const all = ['g.deleted_at IS NULL', ...conditions];
+    const where = ` WHERE ${all.join(' AND ')}`;
     return `${BASE_QUERY}${where}${GROUP_BY} ORDER BY g.created_at DESC`;
 };
 const runGatepassQuery = async (db, conditions, params) => {
@@ -145,7 +167,7 @@ const runGatepassQuery = async (db, conditions, params) => {
 };
 exports.runGatepassQuery = runGatepassQuery;
 const getGatepassByIdInternal = async (db, id) => {
-    const result = await db.query(`${BASE_QUERY} WHERE g.id = $1${GROUP_BY}`, [id]);
+    const result = await db.query(`${BASE_QUERY} WHERE g.id = $1 AND g.deleted_at IS NULL${GROUP_BY}`, [id]);
     const row = result.rows[0];
     if (!row)
         throw new Error('Gatepass not found');
@@ -155,8 +177,8 @@ exports.getGatepassByIdInternal = getGatepassByIdInternal;
 const getRequesterContext = async (db, userId) => {
     const result = await db.query(`SELECT u.id, r.name AS role, u.manager_id
      FROM users u
-     JOIN roles r ON r.id = u.role_id
-     WHERE u.id = $1`, [userId]);
+     JOIN roles r ON r.id = u.role_id AND r.deleted_at IS NULL
+     WHERE u.id = $1 AND u.deleted_at IS NULL`, [userId]);
     const row = result.rows[0];
     if (!row)
         throw new Error('Requester not found');
@@ -170,8 +192,8 @@ exports.getRequesterContext = getRequesterContext;
 const getPrimaryAdminId = async (db) => {
     const result = await db.query(`SELECT u.id
      FROM users u
-     JOIN roles r ON r.id = u.role_id
-     WHERE r.name = 'admin'
+     JOIN roles r ON r.id = u.role_id AND r.deleted_at IS NULL
+     WHERE r.name = 'admin' AND u.deleted_at IS NULL
      ORDER BY u.created_at ASC
      LIMIT 1`);
     const row = result.rows[0];
@@ -184,7 +206,7 @@ const resolveReason = async (db, input) => {
     if (input.reason_id) {
         const result = await db.query(`SELECT id, name
        FROM gatepass_reasons
-       WHERE id = $1`, [input.reason_id]);
+       WHERE id = $1 AND deleted_at IS NULL`, [input.reason_id]);
         const row = result.rows[0];
         if (!row)
             throw new Error('Invalid gatepass reason');
@@ -196,7 +218,7 @@ const resolveReason = async (db, input) => {
     }
     const result = await db.query(`SELECT id, name
      FROM gatepass_reasons
-     WHERE LOWER(name) = LOWER($1)`, [reasonName]);
+     WHERE LOWER(name) = LOWER($1) AND deleted_at IS NULL`, [reasonName]);
     const row = result.rows[0];
     if (!row)
         throw new Error('Invalid gatepass reason');
@@ -204,13 +226,25 @@ const resolveReason = async (db, input) => {
 };
 exports.resolveReason = resolveReason;
 const getPendingApprovalForActor = async (db, gatepassId, actorUserId, approverRole) => {
-    const result = await db.query(`SELECT id, gatepass_id, approver_user_id, approver_role, step, status,
-            remarks, acted_at, created_at, updated_at
-     FROM gatepass_approval_requests
-     WHERE gatepass_id = $1
-       AND approver_user_id = $2
-       AND approver_role = $3
-     LIMIT 1`, [gatepassId, actorUserId, approverRole]);
+    // Any admin can act on the admin approval step (request may be assigned to primary admin).
+    // Managers must match the assigned approver.
+    const result = approverRole === 'admin'
+        ? await db.query(`SELECT id, gatepass_id, approver_user_id, approver_role, step, status,
+                  remarks, acted_at, created_at, updated_at
+           FROM gatepass_approval_requests
+           WHERE gatepass_id = $1
+             AND approver_role = 'admin'
+             AND deleted_at IS NULL
+           ORDER BY step DESC
+           LIMIT 1`, [gatepassId])
+        : await db.query(`SELECT id, gatepass_id, approver_user_id, approver_role, step, status,
+                  remarks, acted_at, created_at, updated_at
+           FROM gatepass_approval_requests
+           WHERE gatepass_id = $1
+             AND approver_user_id = $2
+             AND approver_role = 'manager'
+             AND deleted_at IS NULL
+           LIMIT 1`, [gatepassId, actorUserId]);
     const row = result.rows[0];
     if (!row)
         throw new Error(`No ${approverRole} approval request found for this gatepass`);
@@ -223,6 +257,7 @@ const getApprovalRequestByStep = async (db, gatepassId, step) => {
      FROM gatepass_approval_requests
      WHERE gatepass_id = $1
        AND step = $2
+       AND deleted_at IS NULL
      LIMIT 1`, [gatepassId, step]);
     const row = result.rows[0];
     if (!row)
@@ -236,7 +271,8 @@ const cancelPendingApprovalRequests = async (db, gatepassId, remarks) => {
          remarks = COALESCE(remarks, $2),
          updated_at = NOW()
      WHERE gatepass_id = $1
-       AND status = 'pending'`, [gatepassId, remarks]);
+       AND status = 'pending'
+       AND deleted_at IS NULL`, [gatepassId, remarks]);
 };
 exports.cancelPendingApprovalRequests = cancelPendingApprovalRequests;
 const calculateWorkingMinutesOutside = (checkedOutAt, checkedInAt) => {
@@ -286,6 +322,14 @@ const calculateMinutesBetween = (startValue, endValue, fallbackEnd) => {
 exports.calculateMinutesBetween = calculateMinutesBetween;
 const calculateExtraLunchMinutes = (durationMinutes) => Math.max(0, durationMinutes - exports.LUNCH_LIMIT_MINUTES);
 exports.calculateExtraLunchMinutes = calculateExtraLunchMinutes;
+// When a user leaves for lunch without returning, cap extra time at 6 PM of the checkout day.
+const getLunchFallbackEnd = (checkedOutAt) => {
+    const checkout = (0, exports.parseTimestamp)(checkedOutAt);
+    const base = checkout ? new Date(checkout) : new Date();
+    base.setHours(WORKDAY_END_HOUR, 0, 0, 0);
+    return base;
+};
+exports.getLunchFallbackEnd = getLunchFallbackEnd;
 const parseDateParam = (value, fallback) => {
     if (!value)
         return fallback.toISOString().slice(0, 10);
@@ -344,16 +388,17 @@ const getLiveEmployeeStatusesInternal = async (db, employeeId) => {
        active.checked_out_at,
        active.checked_in_at
      FROM users u
-     JOIN roles r ON r.id = u.role_id
-     LEFT JOIN departments d ON d.id = u.department_id
+     JOIN roles r ON r.id = u.role_id AND r.deleted_at IS NULL
+     LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL
      LEFT JOIN LATERAL (
        SELECT
          gr.name AS reason_name,
          g.checked_out_at,
          g.checked_in_at
        FROM gatepasses g
-       JOIN gatepass_reasons gr ON gr.id = g.reason_id
+       JOIN gatepass_reasons gr ON gr.id = g.reason_id AND gr.deleted_at IS NULL
        WHERE g.user_id = u.id
+         AND g.deleted_at IS NULL
          AND g.status = 'active'
          AND g.checked_out_at IS NOT NULL
          AND g.checked_in_at IS NULL
@@ -361,6 +406,7 @@ const getLiveEmployeeStatusesInternal = async (db, employeeId) => {
        LIMIT 1
      ) active ON TRUE
      WHERE r.name IN ('employee', 'manager')
+       AND u.deleted_at IS NULL
      ${employeeFilter}
      ORDER BY u.name`, params);
     return result.rows.map((row) => {
@@ -374,7 +420,7 @@ const getLiveEmployeeStatusesInternal = async (db, employeeId) => {
                 ? 'Outside Office'
                 : 'In Office';
         const lunchDurationMinutes = onLunch
-            ? (0, exports.calculateMinutesBetween)(checkedOutAt, undefined, new Date())
+            ? (0, exports.calculateMinutesBetween)(checkedOutAt, undefined, (0, exports.getLunchFallbackEnd)(checkedOutAt))
             : 0;
         return {
             user_id: String(row.user_id),
@@ -407,11 +453,12 @@ const getLunchEntriesInRange = async (db, startDate, endDate, employeeId) => {
        g.checked_in_at,
        g.total_minutes_outside
      FROM gatepasses g
-     JOIN gatepass_reasons gr ON gr.id = g.reason_id
-     JOIN users u ON u.id = g.user_id
-     JOIN roles r ON r.id = u.role_id
-     LEFT JOIN departments d ON d.id = u.department_id
-     WHERE g.date BETWEEN $1 AND $2
+     JOIN gatepass_reasons gr ON gr.id = g.reason_id AND gr.deleted_at IS NULL
+     JOIN users u ON u.id = g.user_id AND u.deleted_at IS NULL
+     JOIN roles r ON r.id = u.role_id AND r.deleted_at IS NULL
+     LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL
+     WHERE g.deleted_at IS NULL
+       AND g.date BETWEEN $1 AND $2
        AND r.name IN ('employee', 'manager')
        AND (
          g.checked_out_at IS NOT NULL
@@ -426,7 +473,7 @@ const getLunchEntriesInRange = async (db, startDate, endDate, employeeId) => {
         employee_name: String(row.employee_name),
         department: (0, exports.optionalString)(row.department),
         id: String(row.id),
-        date: String(row.date),
+        date: toDateKey(row.date),
         reason_name: String(row.reason_name),
         status: row.status,
         checked_out_at: (0, exports.optionalString)(row.checked_out_at),
@@ -446,8 +493,9 @@ const getEmployeeActivityLogsInRange = async (db, userId, startDate, endDate) =>
        g.checked_in_at,
        g.total_minutes_outside
      FROM gatepasses g
-     JOIN gatepass_reasons gr ON gr.id = g.reason_id
+     JOIN gatepass_reasons gr ON gr.id = g.reason_id AND gr.deleted_at IS NULL
      WHERE g.user_id = $1
+       AND g.deleted_at IS NULL
        AND g.date BETWEEN $2 AND $3
        AND (
          g.checked_out_at IS NOT NULL
@@ -460,14 +508,14 @@ const getEmployeeActivityLogsInRange = async (db, userId, startDate, endDate) =>
         const checkedOutAt = (0, exports.optionalString)(row.checked_out_at);
         const checkedInAt = (0, exports.optionalString)(row.checked_in_at);
         const lunchDurationMinutes = reasonName.toLowerCase() === exports.LUNCH_REASON_NAME
-            ? (0, exports.calculateMinutesBetween)(checkedOutAt, checkedInAt, new Date())
+            ? (0, exports.calculateMinutesBetween)(checkedOutAt, checkedInAt, (0, exports.getLunchFallbackEnd)(checkedOutAt))
             : 0;
         const extraLunchMinutes = reasonName.toLowerCase() === exports.LUNCH_REASON_NAME
             ? (0, exports.calculateExtraLunchMinutes)(lunchDurationMinutes)
             : 0;
         return {
             id: String(row.id),
-            date: String(row.date),
+            date: toDateKey(row.date),
             reason_name: reasonName,
             reason_description: (0, exports.optionalString)(row.reason_description),
             status: row.status,
@@ -500,7 +548,7 @@ const buildLunchEmployeeSummaries = (liveStatuses, entries) => {
     for (const entry of entries) {
         const isLunchEntry = entry.reason_name.trim().toLowerCase() === exports.LUNCH_REASON_NAME;
         const durationMinutes = isLunchEntry
-            ? (0, exports.calculateMinutesBetween)(entry.checked_out_at, entry.checked_in_at, new Date())
+            ? (0, exports.calculateMinutesBetween)(entry.checked_out_at, entry.checked_in_at, (0, exports.getLunchFallbackEnd)(entry.checked_out_at))
             : 0;
         const extraLunchMinutes = isLunchEntry ? (0, exports.calculateExtraLunchMinutes)(durationMinutes) : 0;
         const entryCurrentStatus = entry.checked_out_at && !entry.checked_in_at

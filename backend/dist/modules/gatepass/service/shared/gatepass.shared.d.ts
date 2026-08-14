@@ -42,6 +42,7 @@ export declare const emitRealtimeUpdate: (gatepass: GatepassWithProfile, eventNa
 export declare const parseTimestamp: (value?: string) => Date | null;
 export declare const calculateMinutesBetween: (startValue?: string, endValue?: string, fallbackEnd?: Date) => number;
 export declare const calculateExtraLunchMinutes: (durationMinutes: number) => number;
+export declare const getLunchFallbackEnd: (checkedOutAt?: string) => Date;
 export declare const parseDateParam: (value: string | undefined, fallback: Date) => string;
 export declare const parseMonthParam: (value?: string) => {
     monthLabel: string;

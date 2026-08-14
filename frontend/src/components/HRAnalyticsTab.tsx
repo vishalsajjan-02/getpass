@@ -1,23 +1,45 @@
-
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Download, Eye, Search } from 'lucide-react';
-import {
-  type LunchEmployeeDetailReport,
-  type LunchEmployeeSummary,
-  useLunchEmployeeDetailReport,
-  useLunchRangeReport,
-} from '@/hooks/useLunchAnalytics';
 import { useProfiles } from '@/hooks/useProfiles';
-import { formatGatepassDateTime } from '@/lib/gatepass';
+import { useGatepasses, type Gatepass, type GatepassStatus } from '@/hooks/useGatepasses';
+import GatepassDetailsModal from '@/components/GatepassDetailsModal';
+import { useAuth } from '@/contexts/AuthContext';
+import {
+  formatGatepassDate,
+  formatGatepassReason,
+  formatGatepassTime,
+  getGatepassStatusLabel,
+  resolveOutsideMinutes,
+} from '@/lib/gatepass';
 import { toast } from '@/hooks/use-toast';
 
-type AnalyticsPreset = '1w' | '1m' | '3m' | '6m' | '1y' | 'custom';
+type AnalyticsPreset = 'today' | '1w' | '1m' | '3m' | '6m' | '1y' | 'custom';
+type GatepassReasonKey = 'lunch' | 'out' | 'other';
+
+type UserGatepassSummary = {
+  user_id: string;
+  employee_name: string;
+  email?: string;
+  department?: string;
+  manager_name: string;
+  lunch: number;
+  out: number;
+  other: number;
+  total: number;
+  gatepasses: Gatepass[];
+};
 
 const formatMinutes = (minutes: number): string => {
   if (minutes <= 0) return '0 min';
@@ -28,38 +50,51 @@ const formatMinutes = (minutes: number): string => {
   return `${hours}h ${remainingMinutes}m`;
 };
 
-const formatOptionalDateTime = (value?: string): string => {
-  if (!value) return 'N/A';
-  const formatted = formatGatepassDateTime(value);
-  return formatted === '—' ? 'N/A' : formatted;
-};
-
-const statusBadgeClass = (status: LunchEmployeeSummary['current_status'] | 'Outside Office') => {
+const gatepassStatusBadgeClass = (status: GatepassStatus): string => {
   switch (status) {
-    case 'On Lunch':
-      return 'bg-amber-100 text-amber-700 border-amber-300';
-    case 'Outside Office':
-      return 'bg-blue-100 text-blue-700 border-blue-300';
+    case 'approved':
+      return 'bg-green-100 text-green-700 border-green-200';
+    case 'pending_manager_approval':
+      return 'bg-amber-100 text-amber-800 border-amber-200';
+    case 'pending_admin_approval':
+    case 'pending':
+      return 'bg-purple-100 text-purple-800 border-purple-200';
+    case 'rejected':
+      return 'bg-red-100 text-red-700 border-red-200';
+    case 'cancelled':
+      return 'bg-rose-100 text-rose-700 border-rose-200';
+    case 'active':
+      return 'bg-orange-100 text-orange-700 border-orange-200';
+    case 'completed':
+      return 'bg-emerald-100 text-emerald-800 border-emerald-200';
     default:
-      return 'bg-green-100 text-green-700 border-green-300';
+      return 'bg-gray-100 text-gray-700 border-gray-200';
   }
 };
 
-type LunchTableRow = {
-  user_id: string;
-  employee_name: string;
-  manager_name: string;
-  department?: string;
-  status: LunchEmployeeSummary['current_status'];
-  extra_lunch_minutes: number;
+const formatDateOnly = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
-const limitBadgeClass = (extraMinutes: number) =>
-  extraMinutes > 0
-    ? 'bg-red-100 text-red-700 border-red-300'
-    : 'bg-green-100 text-green-700 border-green-300';
+const getRequestDateKey = (value: string | undefined): string | null => {
+  if (!value) return null;
+  const normalized = String(value).trim().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
 
-const formatDateOnly = (date: Date): string => date.toISOString().slice(0, 10);
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return formatDateOnly(parsed);
+};
+
+const getReasonKey = (gatepass: Gatepass): GatepassReasonKey => {
+  const name = gatepass.reason_name?.trim().toLowerCase() ?? '';
+  if (name === 'lunch') return 'lunch';
+  if (name === 'out') return 'out';
+  return 'other';
+};
 
 const getRangeDates = (
   preset: AnalyticsPreset,
@@ -77,8 +112,9 @@ const getRangeDates = (
   }
 
   const startDate = new Date(endDate);
-
   switch (preset) {
+    case 'today':
+      break;
     case '1w':
       startDate.setDate(endDate.getDate() - 6);
       break;
@@ -120,26 +156,22 @@ const downloadCsv = (filename: string, rows: Array<Record<string, string | numbe
 };
 
 const HRAnalyticsTab = () => {
-  const [preset, setPreset] = useState<AnalyticsPreset>('1w');
+  const { user } = useAuth();
+  const [preset, setPreset] = useState<AnalyticsPreset>('today');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedEmployee, setSelectedEmployee] = useState<{ id: string; name: string } | null>(null);
-  const [detailPreset, setDetailPreset] = useState<AnalyticsPreset>('1w');
+  const [selectedUser, setSelectedUser] = useState<UserGatepassSummary | null>(null);
+  const [selectedGatepass, setSelectedGatepass] = useState<Gatepass | null>(null);
   const today = formatDateOnly(new Date());
   const [customStartDate, setCustomStartDate] = useState(today);
   const [customEndDate, setCustomEndDate] = useState(today);
-  const [detailCustomStartDate, setDetailCustomStartDate] = useState(today);
-  const [detailCustomEndDate, setDetailCustomEndDate] = useState(today);
+
   const { startDate, endDate } = useMemo(
     () => getRangeDates(preset, customStartDate, customEndDate),
     [customEndDate, customStartDate, preset],
   );
-  const { startDate: detailStartDate, endDate: detailEndDate } = useMemo(
-    () => getRangeDates(detailPreset, detailCustomStartDate, detailCustomEndDate),
-    [detailCustomEndDate, detailCustomStartDate, detailPreset],
-  );
 
   const { data: profiles = [] } = useProfiles();
-  const { data: rangeReport, isLoading } = useLunchRangeReport(startDate, endDate);
+  const { data: gatepasses = [], isLoading } = useGatepasses();
 
   const managerNameByUserId = useMemo(() => {
     const nameById = new Map(profiles.map((profile) => [profile.id, profile.name]));
@@ -150,70 +182,106 @@ const HRAnalyticsTab = () => {
       ]),
     );
   }, [profiles]);
-  const { data: employeeDetail, isLoading: isDetailLoading } = useLunchEmployeeDetailReport(
-    selectedEmployee?.id,
-    detailStartDate,
-    detailEndDate,
-    !!selectedEmployee,
-  );
 
-  const reportEmployees = rangeReport?.employees ?? [];
-  const reportRows = useMemo(
-    () =>
-      reportEmployees.map((employee) => ({
-        user_id: employee.user_id,
-        employee_name: employee.employee_name,
-        manager_name: managerNameByUserId.get(employee.user_id) ?? 'Unassigned',
-        department: employee.department,
-        status: employee.current_status,
-        extra_lunch_minutes: employee.total_extra_lunch_minutes,
-      } satisfies LunchTableRow)),
-    [managerNameByUserId, reportEmployees],
-  );
+  const userSummaries = useMemo(() => {
+    const byUser = new Map<string, UserGatepassSummary>();
 
-  const filteredRows = useMemo(() => {
+    for (const gatepass of gatepasses) {
+      const dateKey = getRequestDateKey(gatepass.date);
+      if (!dateKey || dateKey < startDate || dateKey > endDate) continue;
+
+      const existing = byUser.get(gatepass.user_id);
+      const reason = getReasonKey(gatepass);
+
+      if (!existing) {
+        byUser.set(gatepass.user_id, {
+          user_id: gatepass.user_id,
+          employee_name: gatepass.profiles?.name || 'Unknown',
+          email: gatepass.profiles?.email,
+          department: gatepass.profiles?.department,
+          manager_name: managerNameByUserId.get(gatepass.user_id) ?? 'Unassigned',
+          lunch: reason === 'lunch' ? 1 : 0,
+          out: reason === 'out' ? 1 : 0,
+          other: reason === 'other' ? 1 : 0,
+          total: 1,
+          gatepasses: [gatepass],
+        });
+        continue;
+      }
+
+      existing.lunch += reason === 'lunch' ? 1 : 0;
+      existing.out += reason === 'out' ? 1 : 0;
+      existing.other += reason === 'other' ? 1 : 0;
+      existing.total += 1;
+      existing.gatepasses.push(gatepass);
+    }
+
+    return [...byUser.values()]
+      .map((summary) => ({
+        ...summary,
+        gatepasses: [...summary.gatepasses].sort((left, right) => {
+          const leftDate = getRequestDateKey(left.date) ?? '';
+          const rightDate = getRequestDateKey(right.date) ?? '';
+          if (leftDate !== rightDate) return rightDate.localeCompare(leftDate);
+          return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+        }),
+      }))
+      .sort((left, right) => {
+        if (right.total !== left.total) return right.total - left.total;
+        return left.employee_name.localeCompare(right.employee_name);
+      });
+  }, [endDate, gatepasses, managerNameByUserId, startDate]);
+
+  const filteredSummaries = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return reportRows;
+    if (!query) return userSummaries;
 
-    return reportRows.filter((row) =>
-      row.employee_name.toLowerCase().includes(query)
-      || row.manager_name.toLowerCase().includes(query)
-      || (row.department || '').toLowerCase().includes(query),
+    return userSummaries.filter(
+      (row) =>
+        row.employee_name.toLowerCase().includes(query)
+        || (row.email || '').toLowerCase().includes(query)
+        || (row.department || '').toLowerCase().includes(query)
+        || row.manager_name.toLowerCase().includes(query),
     );
-  }, [reportRows, searchTerm]);
+  }, [searchTerm, userSummaries]);
 
   const exportTableData = () => {
-    const rows = filteredRows.map((row) => ({
+    const rows = filteredSummaries.map((row) => ({
       Employee: row.employee_name,
-      'Manager Name': row.manager_name,
+      Email: row.email || 'N/A',
       Department: row.department || 'N/A',
-      Status: row.status,
-      'Total Extra Time': formatMinutes(row.extra_lunch_minutes),
+      Manager: row.manager_name,
+      Lunch: row.lunch,
+      Out: row.out,
+      Other: row.other,
+      Total: row.total,
     }));
 
-    downloadCsv(`lunch-analytics-${startDate}-to-${endDate}.csv`, rows);
+    downloadCsv(`gatepass-users-${startDate}-to-${endDate}.csv`, rows);
     toast({
       title: 'Data Exported',
-      description: 'Lunch analytics table has been exported to CSV.',
+      description: 'User gatepass summary exported to CSV.',
     });
   };
 
-  const exportEmployeeDetail = (detail: LunchEmployeeDetailReport) => {
-    const rows = detail.activity_logs.map((log) => ({
-      Date: formatOptionalDateTime(log.date),
-      Reason: log.reason_description ? `${log.reason_name}: ${log.reason_description}` : log.reason_name,
-      Status: log.status,
-      'Check Out': formatOptionalDateTime(log.checked_out_at),
-      'Check In': formatOptionalDateTime(log.checked_in_at),
-      'Lunch Duration': formatMinutes(log.lunch_duration_minutes),
-      'Extra Time': formatMinutes(log.extra_lunch_minutes),
-      'Outside Duration': formatMinutes(log.total_outside_office_minutes),
+  const exportUserDetail = (summary: UserGatepassSummary) => {
+    const rows = summary.gatepasses.map((gatepass) => ({
+      Date: formatGatepassDate(gatepass.date),
+      Reason: formatGatepassReason(gatepass),
+      Status: getGatepassStatusLabel(gatepass.status),
+      'Out Time': gatepass.checked_out_at ? formatGatepassTime(gatepass.checked_out_at) : '—',
+      'In Time': gatepass.checked_in_at ? formatGatepassTime(gatepass.checked_in_at) : '—',
+      'Minutes Outside': resolveOutsideMinutes(gatepass),
+      Destination: gatepass.destination || 'N/A',
     }));
 
-    downloadCsv(`lunch-history-${detail.employee_name}-${detail.start_date}-to-${detail.end_date}.csv`, rows);
+    downloadCsv(
+      `gatepasses-${summary.employee_name.replace(/\s+/g, '-').toLowerCase()}-${startDate}-to-${endDate}.csv`,
+      rows,
+    );
     toast({
       title: 'Detail Exported',
-      description: 'Employee history has been exported to CSV.',
+      description: `${summary.employee_name}'s gatepasses exported to CSV.`,
     });
   };
 
@@ -221,117 +289,116 @@ const HRAnalyticsTab = () => {
     <div className="space-y-4">
       <div className="sticky top-0 z-10 -mx-4 bg-[#f8f9fb] px-4 pb-2 md:-mx-5 md:px-5">
         <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-white/80 px-3 py-1.5 shadow-sm">
-        <div className="relative min-w-[200px] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <Input
-            type="search"
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Search by employee, manager, or department..."
-            className="h-9 border-gray-200 bg-white pl-9 text-sm shadow-sm focus-visible:ring-orange-400"
-            aria-label="Search lunch analytics"
-          />
-        </div>
+          <div className="relative min-w-[200px] flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search by employee, manager, or department..."
+              className="h-9 border-gray-200 bg-white pl-9 text-sm shadow-sm focus-visible:ring-orange-400"
+              aria-label="Search gatepass users"
+            />
+          </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-          <Select value={preset} onValueChange={(value) => setPreset(value as AnalyticsPreset)}>
-            <SelectTrigger className="h-9 w-[220px] border-gray-200 bg-white text-sm shadow-sm">
-              <SelectValue placeholder="Select range" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1w">Last 1 Week</SelectItem>
-              <SelectItem value="1m">Last 1 Month</SelectItem>
-              <SelectItem value="3m">Last 3 Months</SelectItem>
-              <SelectItem value="6m">Last 6 Months</SelectItem>
-              <SelectItem value="1y">Last 1 Year</SelectItem>
-              <SelectItem value="custom">Custom Date Range</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+            <Select value={preset} onValueChange={(value) => setPreset(value as AnalyticsPreset)}>
+              <SelectTrigger className="h-9 w-[220px] border-gray-200 bg-white text-sm shadow-sm">
+                <SelectValue placeholder="Select range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="1w">Last 1 Week</SelectItem>
+                <SelectItem value="1m">Last 1 Month</SelectItem>
+                <SelectItem value="3m">Last 3 Months</SelectItem>
+                <SelectItem value="6m">Last 6 Months</SelectItem>
+                <SelectItem value="1y">Last 1 Year</SelectItem>
+                <SelectItem value="custom">Custom Date Range</SelectItem>
+              </SelectContent>
+            </Select>
 
-          {preset === 'custom' && (
-            <>
-              <Input
-                type="date"
-                value={customStartDate}
-                onChange={(event) => setCustomStartDate(event.target.value)}
-                className="h-9 w-[180px] border-gray-200 bg-white text-sm shadow-sm"
-              />
-              <Input
-                type="date"
-                value={customEndDate}
-                onChange={(event) => setCustomEndDate(event.target.value)}
-                className="h-9 w-[180px] border-gray-200 bg-white text-sm shadow-sm"
-              />
-            </>
-          )}
+            {preset === 'custom' && (
+              <>
+                <Input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(event) => setCustomStartDate(event.target.value)}
+                  className="h-9 w-[180px] border-gray-200 bg-white text-sm shadow-sm"
+                />
+                <Input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(event) => setCustomEndDate(event.target.value)}
+                  className="h-9 w-[180px] border-gray-200 bg-white text-sm shadow-sm"
+                />
+              </>
+            )}
 
-          <Button
-            size="sm"
-            onClick={exportTableData}
-            className="h-9 shrink-0 bg-green-600 hover:bg-green-700"
-            disabled={filteredRows.length === 0}
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Export Data
-          </Button>
-        </div>
+            <Button
+              size="sm"
+              onClick={exportTableData}
+              className="h-9 shrink-0 bg-green-600 hover:bg-green-700"
+              disabled={filteredSummaries.length === 0}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export Data
+            </Button>
+          </div>
         </div>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Lunch Tracking Report</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle>Gatepass Report</CardTitle>
+          <p className="text-sm text-gray-500">
+            <span className="font-semibold text-gray-800">{filteredSummaries.length}</span> user
+            {filteredSummaries.length === 1 ? '' : 's'}
+          </p>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="py-8 text-center text-gray-500">Loading lunch analytics...</div>
-          ) : filteredRows.length === 0 ? (
-            <div className="py-8 text-center text-gray-500">No lunch data found for the selected filter.</div>
+            <div className="py-8 text-center text-gray-500">Loading gatepasses...</div>
+          ) : filteredSummaries.length === 0 ? (
+            <div className="py-8 text-center text-gray-500">No gatepasses found for the selected filter.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead>
-                  <tr className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                  <tr className="bg-orange-50 text-left text-xs uppercase tracking-wide text-orange-800">
                     <th className="px-4 py-3">Employee</th>
-                    <th className="px-4 py-3">Manager Name</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Total Extra Time</th>
+                    <th className="px-4 py-3">Manager</th>
+                    <th className="px-4 py-3">Lunch</th>
+                    <th className="px-4 py-3">Out</th>
+                    <th className="px-4 py-3">Other</th>
+                    <th className="px-4 py-3">Total</th>
                     <th className="px-4 py-3">Details</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
-                  {filteredRows.map((row) => (
-                    <tr key={row.user_id}>
+                  {filteredSummaries.map((row) => (
+                    <tr
+                      key={row.user_id}
+                      className="cursor-pointer hover:bg-orange-50/60"
+                      onClick={() => setSelectedUser(row)}
+                    >
                       <td className="px-4 py-3">
                         <div>
                           <p className="font-medium text-gray-900">{row.employee_name}</p>
-                          <p className="text-xs text-gray-500">{row.department || 'No Department'}</p>
+                          <p className="text-xs text-gray-500">
+                            {row.department || 'No Department'}
+                            {row.email ? ` · ${row.email}` : ''}
+                          </p>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-gray-700">{row.manager_name}</td>
-                      <td className="px-4 py-3">
-                        <Badge className={statusBadgeClass(row.status)}>
-                          {row.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge className={limitBadgeClass(row.extra_lunch_minutes)}>
-                          {formatMinutes(row.extra_lunch_minutes)}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedEmployee({ id: row.user_id, name: row.employee_name });
-                            setDetailPreset(preset);
-                            setDetailCustomStartDate(startDate);
-                            setDetailCustomEndDate(endDate);
-                          }}
-                        >
+                      <td className="px-4 py-3 tabular-nums font-medium text-amber-700">{row.lunch}</td>
+                      <td className="px-4 py-3 tabular-nums font-medium text-sky-700">{row.out}</td>
+                      <td className="px-4 py-3 tabular-nums font-medium text-violet-700">{row.other}</td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-gray-900">{row.total}</td>
+                      <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
+                        <Button variant="outline" size="sm" onClick={() => setSelectedUser(row)}>
                           <Eye className="mr-2 h-4 w-4" />
-                          Details
+                          View
                         </Button>
                       </td>
                     </tr>
@@ -343,150 +410,111 @@ const HRAnalyticsTab = () => {
         </CardContent>
       </Card>
 
-      <Dialog open={!!selectedEmployee} onOpenChange={(open) => !open && setSelectedEmployee(null)}>
-        <DialogContent className="max-h-[85vh] max-w-5xl overflow-y-auto">
-          <DialogHeader className="space-y-0">
-            <div className="flex flex-wrap items-center gap-2 pr-8">
-              <DialogTitle className="min-w-[140px] flex-1 text-left text-lg font-semibold leading-tight">
-                {selectedEmployee?.name ? `${selectedEmployee.name} Activity Details` : 'Employee Activity Details'}
-              </DialogTitle>
-              {selectedEmployee && (
-                <>
-                  <Select value={detailPreset} onValueChange={(value) => setDetailPreset(value as AnalyticsPreset)}>
-                    <SelectTrigger className="h-9 w-[160px] shrink-0 bg-white">
-                      <SelectValue placeholder="Select range" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1w">Last 1 Week</SelectItem>
-                      <SelectItem value="1m">Last 1 Month</SelectItem>
-                      <SelectItem value="3m">Last 3 Months</SelectItem>
-                      <SelectItem value="6m">Last 6 Months</SelectItem>
-                      <SelectItem value="1y">Last 1 Year</SelectItem>
-                      <SelectItem value="custom">Custom Date Range</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {detailPreset === 'custom' && (
-                    <>
-                      <Input
-                        type="date"
-                        value={detailCustomStartDate}
-                        onChange={(event) => setDetailCustomStartDate(event.target.value)}
-                        className="h-9 w-[150px] shrink-0 bg-white"
-                      />
-                      <Input
-                        type="date"
-                        value={detailCustomEndDate}
-                        onChange={(event) => setDetailCustomEndDate(event.target.value)}
-                        className="h-9 w-[150px] shrink-0 bg-white"
-                      />
-                    </>
-                  )}
-                  <Button
-                    size="sm"
-                    disabled={!employeeDetail || isDetailLoading}
-                    onClick={() => employeeDetail && exportEmployeeDetail(employeeDetail)}
-                    className="h-9 shrink-0 bg-green-600 hover:bg-green-700"
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Export CSV
-                  </Button>
-                </>
-              )}
+      <Dialog
+        open={Boolean(selectedUser)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedUser(null);
+        }}
+      >
+        <DialogContent className="flex max-h-[90vh] max-w-5xl flex-col overflow-hidden p-0 sm:rounded-xl">
+          <DialogHeader className="shrink-0 border-b bg-orange-50 px-5 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3 pr-8">
+              <div>
+                <DialogTitle className="text-orange-900">
+                  {selectedUser?.employee_name ?? 'Employee'} — Gatepasses
+                </DialogTitle>
+                <DialogDescription className="text-sm text-orange-800/80">
+                  {[selectedUser?.email, selectedUser?.department, selectedUser?.manager_name]
+                    .filter(Boolean)
+                    .join(' · ')}
+                  {selectedUser
+                    ? ` · Lunch ${selectedUser.lunch} · Out ${selectedUser.out} · Other ${selectedUser.other}`
+                    : ''}
+                </DialogDescription>
+              </div>
+              {selectedUser ? (
+                <Button
+                  size="sm"
+                  className="h-9 bg-green-600 hover:bg-green-700"
+                  onClick={() => exportUserDetail(selectedUser)}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Export
+                </Button>
+              ) : null}
             </div>
           </DialogHeader>
 
-          {!selectedEmployee ? null : isDetailLoading ? (
-            <div className="py-8 text-center text-gray-500">Loading employee history...</div>
-          ) : !employeeDetail ? (
-            <div className="py-8 text-center text-gray-500">No detail report found for this employee.</div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card>
-                  <CardContent className="p-4">
-                    <p className="text-xs uppercase tracking-wide text-gray-500">Current Status</p>
-                    <Badge className={`mt-2 ${statusBadgeClass(employeeDetail.current_status)}`}>
-                      {employeeDetail.current_status}
-                    </Badge>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-4">
-                    <p className="text-xs uppercase tracking-wide text-gray-500">Total Lunch Time</p>
-                    <p className="mt-2 text-lg font-semibold text-gray-900">
-                      {formatMinutes(employeeDetail.total_lunch_duration_minutes)}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-4">
-                    <p className="text-xs uppercase tracking-wide text-gray-500">Extra Time</p>
-                    <p className="mt-2 text-lg font-semibold text-gray-900">
-                      {formatMinutes(employeeDetail.total_extra_lunch_minutes)}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-4">
-                    <p className="text-xs uppercase tracking-wide text-gray-500">Total Outside Duration</p>
-                    <p className="mt-2 text-lg font-semibold text-gray-900">
-                      {formatMinutes(employeeDetail.total_outside_office_minutes)}
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card>
-                <CardHeader className="space-y-0 px-4 py-2">
-                  <CardTitle className="text-base font-semibold">Activity Logs</CardTitle>
-                </CardHeader>
-                <CardContent className="px-4 pb-3 pt-0">
-                  {employeeDetail.activity_logs.length === 0 ? (
-                    <div className="py-4 text-center text-gray-500">No activity logs found for this range.</div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200 text-sm">
-                        <thead>
-                          <tr className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-                            <th className="px-3 py-2">Date</th>
-                            <th className="px-3 py-2">Reason</th>
-                            <th className="px-3 py-2">Status</th>
-                            <th className="px-3 py-2">Check Out</th>
-                            <th className="px-3 py-2">Check In</th>
-                            <th className="px-3 py-2">Extra Time</th>
-                            <th className="px-3 py-2">Outside Duration</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
-                          {employeeDetail.activity_logs.map((log) => (
-                            <tr key={`${log.id}-${log.date}-${log.checked_out_at ?? 'na'}`}>
-                              <td className="px-3 py-2 text-gray-700">{formatOptionalDateTime(log.date)}</td>
-                              <td className="px-3 py-2 text-gray-700">
-                                {log.reason_description ? `${log.reason_name}: ${log.reason_description}` : log.reason_name}
-                              </td>
-                              <td className="px-3 py-2">
-                                <Badge variant="outline">{log.status}</Badge>
-                              </td>
-                              <td className="px-3 py-2 text-gray-700">{formatOptionalDateTime(log.checked_out_at)}</td>
-                              <td className="px-3 py-2 text-gray-700">{formatOptionalDateTime(log.checked_in_at)}</td>
-                              <td className="px-3 py-2">
-                                <Badge className={limitBadgeClass(log.extra_lunch_minutes)}>
-                                  {formatMinutes(log.extra_lunch_minutes)}
-                                </Badge>
-                              </td>
-                              <td className="px-3 py-2 text-gray-700">{formatMinutes(log.total_outside_office_minutes)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
+          <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+            {!selectedUser || selectedUser.gatepasses.length === 0 ? (
+              <div className="py-10 text-center text-sm text-gray-500">No gatepasses for this user.</div>
+            ) : (
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="sticky top-0 z-10 bg-white">
+                  <tr className="bg-orange-50 text-left text-xs uppercase tracking-wide text-orange-800">
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2">Reason</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Out</th>
+                    <th className="px-3 py-2">In</th>
+                    <th className="px-3 py-2">Outside</th>
+                    <th className="px-3 py-2">Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {selectedUser.gatepasses.map((gatepass) => (
+                    <tr
+                      key={gatepass.id}
+                      className="cursor-pointer hover:bg-orange-50/60"
+                      onClick={() => setSelectedGatepass(gatepass)}
+                    >
+                      <td className="whitespace-nowrap px-3 py-2 font-medium text-gray-800">
+                        {formatGatepassDate(gatepass.date)}
+                      </td>
+                      <td className="max-w-[220px] px-3 py-2 text-gray-700">
+                        <p className="truncate" title={formatGatepassReason(gatepass)}>
+                          {formatGatepassReason(gatepass)}
+                        </p>
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge className={gatepassStatusBadgeClass(gatepass.status)}>
+                          {getGatepassStatusLabel(gatepass.status)}
+                        </Badge>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-medium text-orange-700">
+                        {gatepass.checked_out_at ? formatGatepassTime(gatepass.checked_out_at) : '—'}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-medium text-emerald-700">
+                        {gatepass.checked_in_at ? formatGatepassTime(gatepass.checked_in_at) : '—'}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-gray-700">
+                        {formatMinutes(resolveOutsideMinutes(gatepass))}
+                      </td>
+                      <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedGatepass(gatepass)}
+                        >
+                          <Eye className="mr-2 h-4 w-4" />
+                          View
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
+
+      <GatepassDetailsModal
+        gatepass={selectedGatepass}
+        isOpen={Boolean(selectedGatepass)}
+        onClose={() => setSelectedGatepass(null)}
+        userRole={(user?.role as 'admin' | 'manager' | 'gatekeeper' | 'employee' | 'guest') ?? 'admin'}
+      />
     </div>
   );
 };

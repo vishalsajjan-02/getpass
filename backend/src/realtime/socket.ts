@@ -11,6 +11,14 @@ type GatepassSocketEvent =
   | 'gatepass:in'
   | 'gatepass:status-updated';
 
+export type AttendanceSocketPayload = {
+  user_id: string;
+  date: string;
+  state: 'absent' | 'present' | 'left';
+  in_time?: string;
+  out_time?: string;
+};
+
 type AuthenticatedSocket = Socket & {
   data: {
     user?: AuthPayload;
@@ -104,4 +112,42 @@ export const emitGatepassSocketEvent = (
   for (const room of getInterestedRooms(gatepass)) {
     io.to(room).emit(eventName, payload);
   }
+};
+
+/** Notify the employee (+ attendance viewers) when in/out status changes. */
+export const emitAttendanceSocketEvent = (attendance: AttendanceSocketPayload): void => {
+  if (!io) return;
+
+  const payload = {
+    event: 'attendance:updated' as const,
+    attendance,
+  };
+
+  const rooms = [
+    userRoom(attendance.user_id),
+    roleRoom('admin'),
+    roleRoom('manager'),
+    roleRoom('gatekeeper'),
+  ];
+
+  for (const room of rooms) {
+    io.to(room).emit('attendance:updated', payload);
+  }
+};
+
+export type PunchPermissionSocketPayload = {
+  user_id: string;
+  can_self_punch: boolean;
+};
+
+/** Notify a user when admin toggles their self-punch permission. */
+export const emitPunchPermissionSocketEvent = (
+  payload: PunchPermissionSocketPayload,
+): void => {
+  if (!io) return;
+
+  io.to(userRoom(payload.user_id)).emit('user:punch-permission', {
+    event: 'user:punch-permission' as const,
+    permission: payload,
+  });
 };

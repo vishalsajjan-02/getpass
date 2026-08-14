@@ -107,7 +107,7 @@ const GatepassCard: React.FC<GatepassCardProps> = ({
             {row.outTime && (
               <div className={cn(infoBoxClass, 'w-fit shrink-0 text-xs')} title={`Out ${row.outTime}`}>
                 <p className="whitespace-nowrap">
-                  <span className="font-bold text-blue-700">Out</span>{' '}
+                  <span className="font-bold text-orange-700">Out</span>{' '}
                   <span className="font-semibold text-gray-800">{row.outTime}</span>
                 </p>
               </div>
@@ -138,7 +138,7 @@ const GatepassCard: React.FC<GatepassCardProps> = ({
           size="icon"
           variant="outline"
           onClick={() => onViewDetails(gatepass)}
-          className="h-7 w-7 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200"
+          className="h-7 w-7 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200"
           aria-label="View details"
         >
           <Eye className="w-4 h-4" />

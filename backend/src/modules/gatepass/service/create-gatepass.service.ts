@@ -7,6 +7,7 @@ import {
   optionalString,
   resolveReason,
 } from './shared/gatepass.shared';
+import { assertUserPresentForGatepass } from '../../userInOutTime/service/shared/user-in-out-time.shared';
 import type {
   ApprovalFlow,
   CreateGatepassInput,
@@ -46,6 +47,10 @@ export const createGatepass = async (userId: string, input: CreateGatepassInput)
 
     const adminUserId = await getPrimaryAdminId(client);
     const requestDate = input.date ?? new Date().toISOString().slice(0, 10);
+
+    if (requester.role !== 'guest') {
+      await assertUserPresentForGatepass(client, userId, requestDate);
+    }
 
     const gatepassType: GatepassType =
       normalizedReason === 'out' || input.gatepass_type === 'out' ? 'out' : 'out-in';

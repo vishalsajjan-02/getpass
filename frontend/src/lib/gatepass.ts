@@ -156,3 +156,22 @@ export const formatGatepassCardTitle = (gatepass: GatepassRowInput): string => {
   if (row.inTime) parts.push(`In ${row.inTime}`);
   return parts.join(' • ');
 };
+
+/** Elapsed outside minutes — uses stored value, or computes from Out/In for legacy rows. */
+export const resolveOutsideMinutes = (
+  gatepass: Pick<
+    Gatepass,
+    'total_minutes_outside' | 'checked_out_at' | 'checked_in_at' | 'gatepass_type' | 'reason_name'
+  >,
+): number => {
+  if (isPermanentOutGatepass(gatepass)) {
+    return Math.max(0, Number(gatepass.total_minutes_outside ?? 0));
+  }
+  const stored = Number(gatepass.total_minutes_outside ?? 0);
+  if (stored > 0) return stored;
+  if (!gatepass.checked_out_at || !gatepass.checked_in_at) return 0;
+  const start = new Date(gatepass.checked_out_at).getTime();
+  const end = new Date(gatepass.checked_in_at).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  return Math.floor((end - start) / 60000);
+};

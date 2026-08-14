@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createGatepass = void 0;
 const database_1 = require("../../../config/database");
 const gatepass_shared_1 = require("./shared/gatepass.shared");
+const user_in_out_time_shared_1 = require("../../userInOutTime/service/shared/user-in-out-time.shared");
 const createGatepass = async (userId, input) => {
     const pool = (0, database_1.getDb)();
     const client = await pool.connect();
@@ -25,6 +26,9 @@ const createGatepass = async (userId, input) => {
         }
         const adminUserId = await (0, gatepass_shared_1.getPrimaryAdminId)(client);
         const requestDate = input.date ?? new Date().toISOString().slice(0, 10);
+        if (requester.role !== 'guest') {
+            await (0, user_in_out_time_shared_1.assertUserPresentForGatepass)(client, userId, requestDate);
+        }
         const gatepassType = normalizedReason === 'out' || input.gatepass_type === 'out' ? 'out' : 'out-in';
         const inserted = await client.query(`INSERT INTO gatepasses (
          user_id,

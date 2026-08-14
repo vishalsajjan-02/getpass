@@ -13,6 +13,13 @@ export interface User {
     department?: string;
     department_id?: string;
     manager_id?: string;
+    employee_id?: string | null;
+    leave_balance?: number;
+    can_self_punch?: boolean;
+    face_image_path?: string | null;
+    face_image_url?: string | null;
+    face_registered_at?: string | null;
+    has_face?: boolean;
     created_at: string;
     updated_at: string;
 }
@@ -52,6 +59,28 @@ export interface DepartmentOption {
 export interface GatepassReason {
     id: string;
     name: string;
+}
+export interface LeaveType {
+    id: string;
+    name: string;
+    is_paid: boolean;
+    is_active: boolean;
+    sort_order: number;
+    created_at: string;
+    updated_at: string;
+}
+export interface CompanyHoliday {
+    id: string;
+    name: string;
+    description: string;
+    holiday_date: string;
+    year: number;
+    is_fixed: boolean;
+    is_paid: boolean;
+    is_active: boolean;
+    sort_order: number;
+    created_at: string;
+    updated_at: string;
 }
 export interface GatepassApprovalRequest {
     id: string;
@@ -182,14 +211,46 @@ export interface LunchEmployeeDetailReport {
     lunch_entries: LunchEntryReport[];
     activity_logs: LunchActivityLog[];
 }
+export type PunchVia = 'self' | 'gatekeeper';
 export interface UserInOutTime {
     id: string;
     user_id: string;
     date: string;
     in_time?: string;
     out_time?: string;
+    in_photo_path?: string;
+    out_photo_path?: string;
+    in_photo_url?: string;
+    out_photo_url?: string;
+    in_location?: string;
+    out_location?: string;
+    in_latitude?: number;
+    in_longitude?: number;
+    out_latitude?: number;
+    out_longitude?: number;
+    /** Punch In via employee's own login or gatekeeper desk login. */
+    in_via?: PunchVia;
+    /** Punch Out via employee's own login or gatekeeper desk login. */
+    out_via?: PunchVia;
+    in_marked_by?: string;
+    out_marked_by?: string;
     created_at: string;
     updated_at: string;
+    face_match_score?: number;
+}
+export type ReportingDayStatus = 'absent' | 'present' | 'pending' | 'weekly_off' | 'holiday';
+export interface AttendanceReportRow {
+    user_id: string;
+    user_name: string;
+    email: string;
+    role: UserRole;
+    department?: string;
+    date: string;
+    in_time?: string;
+    out_time?: string;
+    day_status: ReportingDayStatus;
+    in_via?: PunchVia;
+    out_via?: PunchVia;
 }
 export interface UserInOutTimeReportRow {
     user_id: string;
@@ -201,7 +262,31 @@ export interface UserInOutTimeReportRow {
     entry_id?: string;
     in_time?: string;
     out_time?: string;
+    in_photo_path?: string;
+    out_photo_path?: string;
+    in_photo_url?: string;
+    out_photo_url?: string;
+    in_location?: string;
+    out_location?: string;
+    in_latitude?: number;
+    in_longitude?: number;
+    out_latitude?: number;
+    out_longitude?: number;
+    in_via?: PunchVia;
+    out_via?: PunchVia;
+    in_marked_by?: string;
+    out_marked_by?: string;
+    has_face?: boolean;
     updated_at?: string;
+    /** Absent / Present (in+out); pending when in-only or today still open. */
+    day_status?: ReportingDayStatus;
+}
+export type AttendanceState = 'absent' | 'present' | 'left';
+export interface UserAttendance {
+    date: string;
+    state: AttendanceState;
+    in_time?: string;
+    out_time?: string;
 }
 export interface AuthPayload {
     userId: string;
@@ -221,6 +306,8 @@ export interface CreateUserInput {
     role: UserRole;
     department_id?: string;
     manager_id?: string;
+    employee_id?: string | null;
+    leave_balance?: number;
 }
 export interface BulkImportUserInput {
     name: string;
@@ -229,6 +316,8 @@ export interface BulkImportUserInput {
     role: UserRole;
     department?: string;
     manager_email?: string;
+    employee_id?: string;
+    leave_balance?: number;
 }
 export interface BulkImportUsersResult {
     created: number;
@@ -245,6 +334,7 @@ export interface UpdateUserInput {
     role?: UserRole;
     department_id?: string;
     manager_id?: string;
+    employee_id?: string | null;
 }
 export interface CreateGatepassInput {
     reason_id?: string;

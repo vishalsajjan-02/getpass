@@ -5,7 +5,9 @@ const database_1 = require("../../../config/database");
 const gatepass_shared_1 = require("./shared/gatepass.shared");
 const getGatepassStats = async (userId, role) => {
     const visibility = (0, gatepass_shared_1.buildVisibilityClause)(role, userId, 1);
-    const where = visibility.clause ? ` WHERE ${visibility.clause}` : '';
+    const where = visibility.clause
+        ? ` WHERE g.deleted_at IS NULL AND ${visibility.clause}`
+        : ' WHERE g.deleted_at IS NULL';
     const result = await (0, database_1.getDb)().query(`SELECT g.status, COUNT(*)::int AS count
      FROM gatepasses g
      ${where}

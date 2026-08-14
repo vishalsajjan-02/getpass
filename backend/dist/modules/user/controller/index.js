@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.bulkImport = exports.remove = exports.update = exports.create = exports.getManagers = exports.getDepartments = exports.getRoles = exports.getOne = exports.getAll = void 0;
+exports.clearFace = exports.registerFace = exports.setPunchPermission = exports.bulkImport = exports.remove = exports.update = exports.create = exports.getManagers = exports.getDepartments = exports.getRoles = exports.getOne = exports.getAll = void 0;
 var get_all_users_controller_1 = require("./get-all-users.controller");
 Object.defineProperty(exports, "getAll", { enumerable: true, get: function () { return get_all_users_controller_1.getAll; } });
 var get_user_by_id_controller_1 = require("./get-user-by-id.controller");
@@ -19,4 +19,9 @@ var delete_user_controller_1 = require("./delete-user.controller");
 Object.defineProperty(exports, "remove", { enumerable: true, get: function () { return delete_user_controller_1.remove; } });
 var bulk_import_users_controller_1 = require("./bulk-import-users.controller");
 Object.defineProperty(exports, "bulkImport", { enumerable: true, get: function () { return bulk_import_users_controller_1.bulkImport; } });
+var set_punch_permission_controller_1 = require("./set-punch-permission.controller");
+Object.defineProperty(exports, "setPunchPermission", { enumerable: true, get: function () { return set_punch_permission_controller_1.setPunchPermissionHandler; } });
+var register_user_face_controller_1 = require("./register-user-face.controller");
+Object.defineProperty(exports, "registerFace", { enumerable: true, get: function () { return register_user_face_controller_1.registerFaceHandler; } });
+Object.defineProperty(exports, "clearFace", { enumerable: true, get: function () { return register_user_face_controller_1.clearFaceHandler; } });
 //# sourceMappingURL=index.js.map

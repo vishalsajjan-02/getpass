@@ -20,6 +20,9 @@ const GATEPASS_EVENTS: GatepassSocketEvent[] = [
   'gatepass:status-updated',
 ];
 
+const ATTENDANCE_EVENT = 'attendance:updated';
+const PUNCH_PERMISSION_EVENT = 'user:punch-permission';
+
 const SocketContext = createContext<Socket | null>(null);
 
 const invalidateGatepassQueries = (queryClient: ReturnType<typeof useQueryClient>) => {
@@ -40,6 +43,10 @@ const invalidateGatepassQueries = (queryClient: ReturnType<typeof useQueryClient
       ].includes(rootKey);
     },
   });
+};
+
+const invalidateAttendanceQueries = (queryClient: ReturnType<typeof useQueryClient>) => {
+  queryClient.invalidateQueries({ queryKey: ['user-in-out-time'] });
 };
 
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -71,6 +78,28 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       invalidateGatepassQueries(queryClient);
     };
 
+    const handleAttendanceEvent = (payload?: {
+      attendance?: {
+        user_id: string;
+        date: string;
+        state: 'absent' | 'present' | 'left';
+        in_time?: string;
+        out_time?: string;
+      };
+    }) => {
+      const next = payload?.attendance;
+      if (next && next.user_id === user.id) {
+        // Instantly unlock/lock the New Gatepass button before refetch completes.
+        queryClient.setQueryData(['user-in-out-time', 'me', 'today'], {
+          date: next.date,
+          state: next.state,
+          in_time: next.in_time,
+          out_time: next.out_time,
+        });
+      }
+      invalidateAttendanceQueries(queryClient);
+    };
+
     const handleConnectError = (error: Error) => {
       if (import.meta.env.DEV) {
         console.warn('Socket reconnecting:', error.message);
@@ -80,6 +109,11 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     GATEPASS_EVENTS.forEach((eventName) => {
       nextSocket.on(eventName, handleGatepassEvent);
     });
+    nextSocket.on(ATTENDANCE_EVENT, handleAttendanceEvent);
+    nextSocket.on(PUNCH_PERMISSION_EVENT, () => {
+      queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['user-in-out-time'] });
+    });
     nextSocket.on('connect_error', handleConnectError);
 
     setSocket(nextSocket);
@@ -88,6 +122,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       GATEPASS_EVENTS.forEach((eventName) => {
         nextSocket.off(eventName, handleGatepassEvent);
       });
+      nextSocket.off(ATTENDANCE_EVENT, handleAttendanceEvent);
+      nextSocket.off(PUNCH_PERMISSION_EVENT);
       nextSocket.off('connect_error', handleConnectError);
       if (nextSocket.connected) {
         nextSocket.disconnect();

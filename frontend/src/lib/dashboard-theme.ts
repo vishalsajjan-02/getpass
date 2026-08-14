@@ -1,4 +1,4 @@
-/** Shared WarrantyHub-style dashboard tokens */
+/** Shared dashboard brand tokens — orange combination */
 export const portalTitleClass =
   'text-xl md:text-2xl font-bold bg-gradient-to-r from-orange-500 via-orange-500 to-rose-500 bg-clip-text text-transparent tracking-tight';
 

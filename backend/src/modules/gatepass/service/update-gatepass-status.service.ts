@@ -6,8 +6,10 @@ import {
   getApprovalRequestByStep,
   getGatepassByIdInternal,
   getPendingApprovalForActor,
+  getRequesterContext,
   isPermanentOutGatepass,
 } from './shared/gatepass.shared';
+import { assertUserPresentForGatepass } from '../../userInOutTime/service/shared/user-in-out-time.shared';
 import type { GatepassWithProfile, UpdateGatepassStatusInput, UserRole } from '../../../types';
 
 export const updateGatepassStatus = async (
@@ -159,7 +161,7 @@ export const updateGatepassStatus = async (
         const approvalRequest = await getPendingApprovalForActor(client, id, actorUserId, 'admin');
 
         if (
-          !['pending_admin_approval', 'pending_manager_approval'].includes(gatepass.status)
+          gatepass.status !== 'pending_admin_approval'
           || approvalRequest.status !== 'pending'
         ) {
           throw new Error('This gatepass is not awaiting admin approval');
@@ -176,15 +178,12 @@ export const updateGatepassStatus = async (
             [approvalRequest.id, input.remarks ?? 'Approved by admin', nowIso],
           );
 
-          const managerApprovalPending = gatepass.approval_flow === 'manager_then_admin'
-            && (await getApprovalRequestByStep(client, id, 1)).status === 'pending';
-
           await client.query(
             `UPDATE gatepasses
-             SET status = $2,
+             SET status = 'approved',
                  updated_at = NOW()
              WHERE id = $1`,
-            [id, managerApprovalPending ? 'pending_manager_approval' : 'approved'],
+            [id],
           );
         } else {
           await client.query(
@@ -210,6 +209,11 @@ export const updateGatepassStatus = async (
     } else if (actorRole === 'gatekeeper' && input.status === 'active') {
       if (gatepass.status !== 'approved') {
         throw new Error('Only approved gatepasses can be marked Out');
+      }
+
+      const gatepassOwner = await getRequesterContext(client, gatepass.user_id);
+      if (gatepassOwner.role !== 'guest') {
+        await assertUserPresentForGatepass(client, gatepass.user_id, gatepass.date);
       }
 
       if (isPermanentOutGatepass(gatepass)) {

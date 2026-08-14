@@ -11,6 +11,7 @@ import {
   formatGatepassReason,
   getGatepassStatusLabel,
   isPendingGatepassStatus,
+  resolveOutsideMinutes,
   toDateOnlyKey,
 } from '@/lib/gatepass';
 import { toast } from '@/hooks/use-toast';
@@ -105,7 +106,7 @@ const EmployeeAnalyticsTab: React.FC<EmployeeAnalyticsTabProps> = ({ gatepasses:
       approved: filtered.filter((g) => g.status === 'approved').length,
       completed: filtered.filter((g) => g.status === 'completed').length,
       rejected: filtered.filter((g) => g.status === 'rejected' || g.status === 'cancelled').length,
-      minutesOutside: filtered.reduce((sum, g) => sum + (g.total_minutes_outside || 0), 0),
+      minutesOutside: filtered.reduce((sum, g) => sum + resolveOutsideMinutes(g), 0),
       extraLunch: filtered.reduce((sum, g) => sum + calculateExtraLunchMinutes(g), 0),
     }),
     [filtered],
@@ -133,7 +134,7 @@ const EmployeeAnalyticsTab: React.FC<EmployeeAnalyticsTabProps> = ({ gatepasses:
         Status: getGatepassStatusLabel(g.status),
         'Out Time': g.checked_out_at ? new Date(g.checked_out_at).toLocaleString() : '',
         'In Time': g.checked_in_at ? new Date(g.checked_in_at).toLocaleString() : '',
-        'Minutes Outside': g.total_minutes_outside ?? 0,
+        'Minutes Outside': resolveOutsideMinutes(g),
         'Extra Lunch Minutes': calculateExtraLunchMinutes(g),
       })),
     );
@@ -183,7 +184,7 @@ const EmployeeAnalyticsTab: React.FC<EmployeeAnalyticsTabProps> = ({ gatepasses:
       </Card>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <MetricCard title="Total" value={stats.total} subtitle={PRESET_LABELS[preset]} icon={<FileText className="h-5 w-5" />} color="blue" />
+        <MetricCard title="Total" value={stats.total} subtitle={PRESET_LABELS[preset]} icon={<FileText className="h-5 w-5" />} color="orange" />
         <MetricCard title="Pending" value={stats.pending} subtitle={PRESET_LABELS[preset]} icon={<Clock className="h-5 w-5" />} color="orange" />
         <MetricCard title="Approved" value={stats.approved} subtitle={PRESET_LABELS[preset]} icon={<CheckCircle className="h-5 w-5" />} color="green" />
         <MetricCard title="Completed" value={stats.completed} subtitle={PRESET_LABELS[preset]} icon={<CheckCircle className="h-5 w-5" />} color="indigo" />
@@ -208,7 +209,7 @@ const EmployeeAnalyticsTab: React.FC<EmployeeAnalyticsTabProps> = ({ gatepasses:
             byStatus.map(([status, count]) => (
               <div key={status} className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2 text-sm">
                 <span className="font-medium text-gray-800">{status}</span>
-                <span className="font-semibold text-orange-600">{count}</span>
+                <span className="font-semibold text-blue-600">{count}</span>
               </div>
             ))
           )}

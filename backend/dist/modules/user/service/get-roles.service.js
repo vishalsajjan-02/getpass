@@ -4,6 +4,7 @@ exports.getRoles = void 0;
 const database_1 = require("../../../config/database");
 const getRoles = async () => {
     const result = await (0, database_1.getDb)().query(`SELECT id AS role_id, name FROM roles
+     WHERE deleted_at IS NULL
      ORDER BY CASE name
        WHEN 'admin'      THEN 1
        WHEN 'manager'    THEN 2

@@ -9,7 +9,9 @@ export const guestLogin = async (code: string): Promise<{ token: string; user: U
     throw new Error('Invalid guest code');
   }
 
-  const result = await getDb().query(`${USER_SELECT} WHERE r.name = 'guest' LIMIT 1`);
+  const result = await getDb().query(
+    `${USER_SELECT} WHERE r.name = 'guest' AND u.deleted_at IS NULL LIMIT 1`,
+  );
   const row = result.rows[0] as User | undefined;
   if (!row) throw new Error('No guest account configured. Run seed first.');
 

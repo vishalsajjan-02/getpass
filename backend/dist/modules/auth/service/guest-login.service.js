@@ -9,7 +9,7 @@ const guestLogin = async (code) => {
     if (!env_1.env.GUEST_CODES.includes(code)) {
         throw new Error('Invalid guest code');
     }
-    const result = await (0, database_1.getDb)().query(`${auth_shared_1.USER_SELECT} WHERE r.name = 'guest' LIMIT 1`);
+    const result = await (0, database_1.getDb)().query(`${auth_shared_1.USER_SELECT} WHERE r.name = 'guest' AND u.deleted_at IS NULL LIMIT 1`);
     const row = result.rows[0];
     if (!row)
         throw new Error('No guest account configured. Run seed first.');

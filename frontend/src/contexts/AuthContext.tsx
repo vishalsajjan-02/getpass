@@ -11,6 +11,7 @@ export interface User {
   department?: string;
   department_id?: string;
   manager_id?: string;
+  can_self_punch?: boolean;
 }
 
 interface AuthContextType {

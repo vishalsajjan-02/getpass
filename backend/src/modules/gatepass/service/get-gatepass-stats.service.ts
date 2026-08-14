@@ -4,7 +4,9 @@ import type { GatepassStats, GatepassStatus, UserRole } from '../../../types';
 
 export const getGatepassStats = async (userId: string, role: UserRole): Promise<GatepassStats> => {
   const visibility = buildVisibilityClause(role, userId, 1);
-  const where = visibility.clause ? ` WHERE ${visibility.clause}` : '';
+  const where = visibility.clause
+    ? ` WHERE g.deleted_at IS NULL AND ${visibility.clause}`
+    : ' WHERE g.deleted_at IS NULL';
   const result = await getDb().query(
     `SELECT g.status, COUNT(*)::int AS count
      FROM gatepasses g

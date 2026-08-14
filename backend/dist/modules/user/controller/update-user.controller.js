@@ -14,6 +14,8 @@ const update = async (req, res) => {
         const input = req.body;
         if (!isElevatedRole)
             delete input.role;
+        // Punch permission is managed only via /users/:id/punch-permission
+        delete input.can_self_punch;
         (0, response_utils_1.sendSuccess)(res, await (0, update_user_service_1.updateUser)(id, input));
     }
     catch (err) {

@@ -25,7 +25,7 @@ const getYearlyLunchReport = async (yearParam, employeeId) => {
         const monthLabel = checkedOutAt
             ? `${checkedOutAt.getFullYear()}-${String(checkedOutAt.getMonth() + 1).padStart(2, '0')}`
             : String(entry.date).slice(0, 7);
-        const durationMinutes = (0, gatepass_shared_1.calculateMinutesBetween)(entry.checked_out_at, entry.checked_in_at, new Date());
+        const durationMinutes = (0, gatepass_shared_1.calculateMinutesBetween)(entry.checked_out_at, entry.checked_in_at, (0, gatepass_shared_1.getLunchFallbackEnd)(entry.checked_out_at));
         const extraLunchMinutes = (0, gatepass_shared_1.calculateExtraLunchMinutes)(durationMinutes);
         const existing = monthMap.get(monthLabel) ?? {
             month: monthLabel,

@@ -5,6 +5,7 @@ const database_1 = require("../../../config/database");
 const getGatepassReasons = async () => {
     const result = await (0, database_1.getDb)().query(`SELECT id, name
      FROM gatepass_reasons
+     WHERE deleted_at IS NULL
      ORDER BY CASE LOWER(name)
        WHEN 'lunch' THEN 1
        WHEN 'out' THEN 2

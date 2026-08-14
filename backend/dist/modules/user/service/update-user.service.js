@@ -20,7 +20,12 @@ const updateUser = async (id, input) => {
     if (input.password) {
         extra.password = await bcryptjs_1.default.hash(input.password, user_shared_1.SALT_ROUNDS);
     }
-    const { password: _pw, ...inputWithoutPassword } = input;
+    if ('employee_id' in input) {
+        const employeeId = (0, user_shared_1.normalizeEmployeeId)(input.employee_id);
+        await (0, user_shared_1.assertEmployeeIdAvailable)(employeeId, id);
+        extra.employee_id = employeeId;
+    }
+    const { password: _pw, employee_id: _eid, ...inputWithoutPassword } = input;
     const merged = { ...inputWithoutPassword, ...extra };
     const entries = Object.entries(merged).filter(([, v]) => v !== undefined);
     if (!entries.length)

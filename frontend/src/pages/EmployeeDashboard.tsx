@@ -1,50 +1,78 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import DashboardBanner from '@/components/DashboardBanner';
-import MetricCard from '../components/MetricCard';
 import GatepassRequestForm from '../components/GatepassRequestForm';
 import GatepassDetailsModal from '../components/GatepassDetailsModal';
 import GatepassList from '../components/GatepassList';
-import EmployeeAnalyticsTab from '../components/EmployeeAnalyticsTab';
-import EmployeeAnalyticsCharts from '../components/EmployeeAnalyticsCharts';
+import SelfAttendanceTab from '@/components/SelfAttendanceTab';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Plus, FileText, Clock, CheckCircle, X, Users, Search, BarChart3 } from 'lucide-react';
+import { Plus, Users, Search, ClipboardList, Clock } from 'lucide-react';
 import { useMockAuth } from '../contexts/MockAuthContext';
 import { useGatepasses, useCreateGatepass } from '../hooks/useGatepasses';
+import { useMyAttendance } from '../hooks/useUserInOutTime';
 import { toast } from '@/hooks/use-toast';
 import {
-  formatGatepassDate,
   formatGatepassReason,
   getGatepassStatusLabel,
   isPendingGatepassStatus,
 } from '@/lib/gatepass';
 
-type RequestStatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
+const toLocalDateString = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
-const FILTER_LABELS: Record<RequestStatusFilter, string> = {
-  all: 'All requests',
-  pending: 'Pending',
-  approved: 'Approved',
-  rejected: 'Rejected',
+const getRequestDateKey = (value: string | undefined): string | null => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return toLocalDateString(parsed);
+  }
+  const normalized = value.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : null;
+};
+
+const getRequestTime = (value: string | undefined): number => {
+  if (!value) return 0;
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
+  return 0;
+};
+
+const matchesGatepassSearch = (gatepass: any, search: string): boolean => {
+  if (!search) return true;
+  return [
+    formatGatepassReason(gatepass),
+    getGatepassStatusLabel(gatepass.status),
+    gatepass.reason_name,
+    gatepass.reason_description,
+    gatepass.destination,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .includes(search);
 };
 
 const EmployeeDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
+  const [requestPage, setRequestPage] = useState<'requests' | 'history'>('requests');
+  const [historySearch, setHistorySearch] = useState('');
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [selectedGatepass, setSelectedGatepass] = useState(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<RequestStatusFilter>('all');
 
   const { user } = useMockAuth();
   const { data: gatepasses = [], isLoading } = useGatepasses();
+  const { data: attendance } = useMyAttendance();
   const createGatepassMutation = useCreateGatepass();
+  const canRequestGatepass = attendance?.state === 'present';
 
-  // Handle initial loading state
   useEffect(() => {
     if (!isLoading && user) {
       setIsInitialLoading(false);
@@ -59,23 +87,17 @@ const EmployeeDashboard = () => {
     }
   }, [gatepasses, selectedGatepass]);
 
-  useEffect(() => {
-    if (activeTab !== 'requests') {
-      setSearchTerm('');
-      setStatusFilter('all');
+  const handleTabChange = (tab: string) => {
+    setShowRequestForm(false);
+    if (tab === 'overview') {
+      setRequestPage('requests');
     }
-  }, [activeTab]);
-
-  const handleMetricClick = (filter: RequestStatusFilter) => {
-    setStatusFilter(filter);
-    setSearchTerm('');
-    setActiveTab('requests');
+    setActiveTab(tab);
   };
 
   const menuItems = [
     { id: 'overview', label: 'Dashboard', icon: <Users className="w-5 h-5" /> },
-    { id: 'requests', label: 'My Requests', icon: <FileText className="w-5 h-5" /> },
-    { id: 'analytics', label: 'Analytics & Reports', icon: <BarChart3 className="w-5 h-5" /> },
+    { id: 'attendance', label: 'Attendance', icon: <ClipboardList className="w-5 h-5" /> },
   ];
 
   const badgeClass = 'text-[11px] px-2 py-0.5 font-medium whitespace-nowrap';
@@ -110,7 +132,7 @@ const EmployeeDashboard = () => {
       case 'cancelled':
         return <Badge className={`${badgeClass} bg-rose-100 text-rose-700 border-rose-200`}>Cancelled</Badge>;
       case 'active':
-        return <Badge className={`${badgeClass} bg-blue-100 text-blue-700 border-blue-200`}>Out</Badge>;
+        return <Badge className={`${badgeClass} bg-orange-100 text-orange-700 border-orange-200`}>Out</Badge>;
       case 'completed':
         return <Badge className={`${badgeClass} bg-emerald-100 text-emerald-800 border-emerald-200`}>Completed</Badge>;
       default:
@@ -118,42 +140,38 @@ const EmployeeDashboard = () => {
     }
   };
 
-  const filteredGatepasses = useMemo(() => {
-    let list = gatepasses;
+  const todayDate = toLocalDateString(new Date());
 
-    if (statusFilter === 'pending') {
-      list = list.filter((g) => isPendingGatepassStatus(g.status));
-    } else if (statusFilter === 'approved') {
-      list = list.filter((g) => g.status === 'approved');
-    } else if (statusFilter === 'rejected') {
-      list = list.filter((g) => g.status === 'rejected' || g.status === 'cancelled');
-    }
-
-    const query = searchTerm.trim().toLowerCase();
-    if (!query) return list;
-
-    return list.filter((gatepass) => {
-      const searchable = [
-        formatGatepassReason(gatepass),
-        formatGatepassDate(gatepass.date),
-        getGatepassStatusLabel(gatepass.status),
-        gatepass.reason_name,
-        gatepass.reason_description,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-
-      return searchable.includes(query);
-    });
-  }, [gatepasses, searchTerm, statusFilter]);
-
-  const stats = {
-    total: gatepasses.length,
-    pending: gatepasses.filter(g => isPendingGatepassStatus(g.status)).length,
-    approved: gatepasses.filter(g => g.status === 'approved').length,
-    rejected: gatepasses.filter(g => g.status === 'rejected' || g.status === 'cancelled').length,
+  const sortRequests = (left: any, right: any) => {
+    const leftPending = isPendingGatepassStatus(left.status);
+    const rightPending = isPendingGatepassStatus(right.status);
+    if (leftPending !== rightPending) return leftPending ? -1 : 1;
+    const rightDate = getRequestTime(right.date);
+    const leftDate = getRequestTime(left.date);
+    if (rightDate !== leftDate) return rightDate - leftDate;
+    return getRequestTime(right.created_at) - getRequestTime(left.created_at);
   };
+
+  const todayRequests = useMemo(
+    () =>
+      gatepasses
+        .filter((g) => getRequestDateKey(g.date) === todayDate)
+        .sort(sortRequests),
+    [gatepasses, todayDate],
+  );
+
+  const historyRequests = useMemo(
+    () =>
+      gatepasses
+        .filter((g) => {
+          const requestDate = getRequestDateKey(g.date);
+          // History = everything except today (includes past and future-dated).
+          if (!requestDate || requestDate === todayDate) return false;
+          return matchesGatepassSearch(g, historySearch.trim().toLowerCase());
+        })
+        .sort(sortRequests),
+    [gatepasses, todayDate, historySearch],
+  );
 
   const handleNewRequest = async (data: any) => {
     try {
@@ -165,202 +183,131 @@ const EmployeeDashboard = () => {
       });
       setShowRequestForm(false);
       toast({
-        title: "Success",
-        description: "Gatepass request created successfully!",
+        title: 'Success',
+        description: 'Gatepass request created successfully!',
       });
     } catch (error) {
       console.error('Error creating gatepass:', error);
       toast({
-        title: "Error",
-        description: "Failed to create gatepass request. Please try again.",
-        variant: "destructive",
+        title: 'Error',
+        description: (error as Error).message || 'Failed to create gatepass request. Please try again.',
+        variant: 'destructive',
       });
     }
   };
 
+  const attendanceBanner = attendance && attendance.state !== 'present' && (
+    <Card className="border-amber-200 bg-amber-50 shadow-sm">
+      <CardContent className="p-4 text-sm text-amber-900">
+        {attendance.state === 'absent' ? (
+          <>
+            You are not in today. Ask the gatekeeper to mark you{' '}
+            <strong>Present</strong> before you can request lunch, out, or other gatepasses.
+          </>
+        ) : (
+          <>
+            You have <strong>left for the day</strong>. New gatepass requests are not allowed.
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+
   const pageHeaders: Record<string, { title: string; description: string }> = {
     overview: {
-      title: 'Employee Dashboard',
-      description: 'Welcome back! Manage your gatepass requests and track their status.',
+      title: requestPage === 'history' ? 'Request History' : 'Employee Dashboard',
+      description:
+        requestPage === 'history'
+          ? 'All past gatepass requests'
+          : 'Welcome back! Manage your gatepass requests and track their status.',
     },
-    requests: {
-      title: 'My Requests',
-      description: 'View and track all your gatepass requests.',
-    },
-    analytics: {
-      title: 'Analytics & Reports',
-      description: 'View your gatepass trends and download reports.',
+    attendance: {
+      title: 'Attendance',
+      description: 'Your daily in/out attendance for the selected month',
     },
   };
 
   const currentPageHeader = pageHeaders[activeTab] ?? pageHeaders.overview;
 
-  const renderOverview = () => (
-    <div className="space-y-4 animate-fade-in">
-      {/* Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard
-          title="Total Requests"
-          value={stats.total.toString()}
-          subtitle="All time"
-          icon={<FileText className="w-6 h-6" />}
-          color="blue"
-          onClick={() => handleMetricClick('all')}
-        />
-        <MetricCard
-          title="Pending"
-          value={stats.pending.toString()}
-          subtitle="All time"
-          icon={<Clock className="w-6 h-6" />}
-          color="orange"
-          onClick={() => handleMetricClick('pending')}
-        />
-        <MetricCard
-          title="Approved"
-          value={stats.approved.toString()}
-          subtitle="All time"
-          icon={<CheckCircle className="w-6 h-6" />}
-          color="green"
-          onClick={() => handleMetricClick('approved')}
-        />
-        <MetricCard
-          title="Rejected"
-          value={stats.rejected.toString()}
-          subtitle="All time"
-          icon={<X className="w-6 h-6" />}
-          color="red"
-          onClick={() => handleMetricClick('rejected')}
-        />
-      </div>
-
-      {isLoading ? (
-        <Card className="shadow-md border-0">
-          <CardContent className="text-center p-8 text-gray-500">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto mb-4" />
-            <p>Loading charts...</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <EmployeeAnalyticsCharts gatepasses={gatepasses} periodLabel="All time" compact />
-      )}
-
-      {isLoading ? (
+  const renderRequestCards = (requests: typeof gatepasses, emptyMessage: string) => {
+    if (isLoading) {
+      return (
         <Card className="shadow-md border-0">
           <CardContent className="text-center p-8 text-gray-500">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-4" />
             <p>Loading requests...</p>
           </CardContent>
         </Card>
-      ) : (
-        <GatepassList
-          title="Recent Requests"
-          gatepasses={gatepasses.slice(0, 2)}
-          onViewDetails={setSelectedGatepass}
-          getStatusBadge={getStatusBadge}
-          headerAction={
+      );
+    }
+
+    return (
+      <GatepassList
+        gatepasses={requests}
+        onViewDetails={setSelectedGatepass}
+        getStatusBadge={getStatusBadge}
+        emptyState={
+          <div className="text-center p-8 text-gray-500">
+            <Clock className="mx-auto mb-4 h-12 w-12 text-gray-300" />
+            <p>{emptyMessage}</p>
+          </div>
+        }
+      />
+    );
+  };
+
+  const renderOverview = () => (
+    <div className="mt-2 space-y-4 animate-fade-in">
+      {attendanceBanner}
+
+      <div>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h3 className="shrink-0 text-lg font-semibold text-gray-800">
+            {requestPage === 'history' ? 'Request History' : 'Gatepass Requests'}
+          </h3>
+          {requestPage === 'history' && (
+            <div className="relative min-w-[180px] flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                type="search"
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder="Search by reason or status..."
+                className="h-9 border-gray-200 bg-white pl-9 text-sm shadow-sm focus-visible:ring-orange-400"
+                aria-label="Search request history"
+              />
+            </div>
+          )}
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <Button
-              variant="link"
-              className="text-green-600 hover:text-green-700 font-semibold h-auto p-0"
-              onClick={() => setActiveTab('requests')}
+              size="sm"
+              variant={requestPage === 'requests' ? 'default' : 'outline'}
+              onClick={() => setRequestPage('requests')}
+              className={requestPage === 'requests' ? 'bg-orange-500 hover:bg-orange-600' : ''}
             >
-              View All →
+              Today
             </Button>
-          }
-          emptyState={
-            <div className="text-center p-8 text-gray-500">
-              <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>No gatepass requests yet</p>
-              <p className="text-sm">Create your first request to get started</p>
-            </div>
-          }
-        />
-      )}
-    </div>
-  );
-
-  const renderRequestsToolbar = () => (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <Input
-            type="search"
-            placeholder="Search by reason, date, or status..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="h-10 w-full border-gray-200 bg-white pl-9 text-sm shadow-sm focus-visible:ring-orange-400"
-            aria-label="Search gatepass requests"
-          />
+            <Button
+              size="sm"
+              variant={requestPage === 'history' ? 'default' : 'outline'}
+              onClick={() => setRequestPage('history')}
+              className={requestPage === 'history' ? 'bg-orange-500 hover:bg-orange-600' : ''}
+            >
+              History
+            </Button>
+          </div>
         </div>
-        <Button
-          onClick={() => setShowRequestForm(true)}
-          disabled={createGatepassMutation.isPending}
-          className="shrink-0 bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-white"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          {createGatepassMutation.isPending ? 'Creating...' : 'New Request'}
-        </Button>
+
+        {requestPage === 'history'
+          ? renderRequestCards(
+              historyRequests,
+              historySearch.trim()
+                ? 'No past requests match your search.'
+                : 'No past requests found.',
+            )
+          : renderRequestCards(todayRequests, 'No requests found for today.')}
       </div>
-
-      {statusFilter !== 'all' && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-800">
-            Showing: {FILTER_LABELS[statusFilter]}
-          </Badge>
-          <Button
-            type="button"
-            variant="link"
-            className="h-auto p-0 text-orange-600 hover:text-orange-700"
-            onClick={() => setStatusFilter('all')}
-          >
-            Show all
-          </Button>
-        </div>
-      )}
     </div>
-  );
-
-  const renderRequestsList = () => (
-    <>
-      {isLoading ? (
-        <Card className="shadow-md border-0">
-          <CardContent className="text-center p-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-4" />
-            <p className="text-gray-500">Loading your requests...</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <GatepassList
-          gatepasses={filteredGatepasses}
-          onViewDetails={setSelectedGatepass}
-          getStatusBadge={getStatusBadge}
-          emptyState={
-            <div className="text-center p-8 text-gray-500">
-              <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>
-                {searchTerm.trim()
-                  ? 'No requests match your search'
-                  : statusFilter !== 'all'
-                    ? `No ${FILTER_LABELS[statusFilter].toLowerCase()} requests`
-                    : 'No gatepass requests yet'}
-              </p>
-              {searchTerm.trim() || statusFilter !== 'all' ? (
-                <Button
-                  variant="link"
-                  className="mt-2 text-orange-600 hover:text-orange-700"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setStatusFilter('all');
-                  }}
-                >
-                  {searchTerm.trim() && statusFilter !== 'all' ? 'Clear filters' : searchTerm.trim() ? 'Clear search' : 'Show all'}
-                </Button>
-              ) : null}
-            </div>
-          }
-        />
-      )}
-    </>
   );
 
   const renderContent = () => {
@@ -376,10 +323,8 @@ const EmployeeDashboard = () => {
     switch (activeTab) {
       case 'overview':
         return renderOverview();
-      case 'requests':
-        return renderRequestsList();
-      case 'analytics':
-        return <EmployeeAnalyticsTab />;
+      case 'attendance':
+        return <SelfAttendanceTab />;
       default:
         return renderOverview();
     }
@@ -389,7 +334,7 @@ const EmployeeDashboard = () => {
     return (
       <div className="h-screen bg-[#f8f9fb] flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4" />
           <p className="text-gray-600">Loading dashboard...</p>
         </div>
       </div>
@@ -399,7 +344,7 @@ const EmployeeDashboard = () => {
   return (
     <DashboardLayout
       activeTab={activeTab}
-      onTabChange={setActiveTab}
+      onTabChange={handleTabChange}
       menuItems={menuItems}
       colorScheme="orange"
       pageHeader={
@@ -407,19 +352,19 @@ const EmployeeDashboard = () => {
           title={currentPageHeader.title}
           description={currentPageHeader.description}
           icon={
-            activeTab === 'analytics' ? (
-              <BarChart3 className="h-4 w-4 text-white" />
+            activeTab === 'attendance' ? (
+              <ClipboardList className="h-7 w-7 text-white" />
             ) : activeTab !== 'overview' ? (
               <Users className="h-4 w-4 text-white" />
             ) : undefined
           }
           actions={
-            activeTab === 'overview' ? (
+            activeTab === 'overview' && requestPage === 'requests' && !showRequestForm ? (
               <Button
                 type="button"
                 onClick={() => setShowRequestForm(true)}
-                disabled={createGatepassMutation.isPending}
-                className="shrink-0 h-9 rounded-md bg-white px-3 md:px-4 text-xs md:text-sm font-semibold text-black shadow-sm hover:bg-gray-100"
+                disabled={createGatepassMutation.isPending || !canRequestGatepass}
+                className="shrink-0 h-9 rounded-md bg-white px-3 md:px-4 text-xs md:text-sm font-semibold text-black shadow-sm hover:bg-gray-100 disabled:opacity-60"
               >
                 <Plus className="w-4 h-4 mr-1.5 text-black" />
                 {createGatepassMutation.isPending ? 'Creating...' : 'New Gatepass Request'}
@@ -427,9 +372,6 @@ const EmployeeDashboard = () => {
             ) : undefined
           }
         />
-      }
-      pageToolbar={
-        activeTab === 'requests' && !showRequestForm ? renderRequestsToolbar() : undefined
       }
     >
       {renderContent()}

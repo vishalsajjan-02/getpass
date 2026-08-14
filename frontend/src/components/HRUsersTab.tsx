@@ -14,11 +14,22 @@ import { useCreateUser, useUpdateUser, useDeleteUser } from '@/hooks/useUserMana
 import { exportUsersCsv } from '@/lib/users-csv';
 import BulkImportUsersDialog from '@/components/BulkImportUsersDialog';
 import { toast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 type UserFormData = {
   name: string;
   email: string;
   password: string;
+  employee_id: string;
   role: 'admin' | 'manager' | 'gatekeeper' | 'employee' | 'guest';
   department_id: string;
   manager_id: string;
@@ -28,6 +39,7 @@ const emptyUserForm: UserFormData = {
   name: '',
   email: '',
   password: '',
+  employee_id: '',
   role: 'employee',
   department_id: '',
   manager_id: '',
@@ -51,6 +63,7 @@ export const CreateUserDialogButton = ({ className = '' }: { className?: string 
         name: newUser.name,
         email: newUser.email,
         password: newUser.password,
+        employee_id: newUser.employee_id.trim() || null,
         role: newUser.role,
         department_id: newUser.department_id || undefined,
         manager_id: newUser.role === 'employee' && newUser.manager_id ? newUser.manager_id : undefined,
@@ -77,12 +90,12 @@ export const CreateUserDialogButton = ({ className = '' }: { className?: string 
           Create User
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>Create New User</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
-          <div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
             <Label htmlFor="name">Name</Label>
             <Input
               id="name"
@@ -91,7 +104,7 @@ export const CreateUserDialogButton = ({ className = '' }: { className?: string 
               placeholder="Enter full name"
             />
           </div>
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
@@ -99,9 +112,20 @@ export const CreateUserDialogButton = ({ className = '' }: { className?: string 
               value={newUser.email}
               onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
               placeholder="Enter email address"
+              autoComplete="off"
             />
           </div>
-          <div>
+          <div className="space-y-2">
+            <Label htmlFor="employee_id">Employee ID</Label>
+            <Input
+              id="employee_id"
+              value={newUser.employee_id}
+              onChange={(e) => setNewUser({ ...newUser, employee_id: e.target.value })}
+              placeholder="e.g. EMP-1024"
+              autoComplete="off"
+            />
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
             <div className="relative">
               <Input
@@ -111,6 +135,7 @@ export const CreateUserDialogButton = ({ className = '' }: { className?: string 
                 onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
                 placeholder="Enter initial password"
                 className="pr-10"
+                autoComplete="new-password"
               />
               <button
                 type="button"
@@ -121,7 +146,7 @@ export const CreateUserDialogButton = ({ className = '' }: { className?: string 
               </button>
             </div>
           </div>
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="role">Role</Label>
             <Select
               value={newUser.role}
@@ -129,7 +154,7 @@ export const CreateUserDialogButton = ({ className = '' }: { className?: string 
                 setNewUser({ ...newUser, role: value as UserFormData['role'], manager_id: '' })
               }
             >
-              <SelectTrigger>
+              <SelectTrigger id="role">
                 <SelectValue placeholder="Select role" />
               </SelectTrigger>
               <SelectContent>
@@ -141,31 +166,13 @@ export const CreateUserDialogButton = ({ className = '' }: { className?: string 
               </SelectContent>
             </Select>
           </div>
-          {newUser.role === 'employee' && (
-            <div>
-              <Label htmlFor="manager_id">Manager</Label>
-              <Select
-                value={newUser.manager_id}
-                onValueChange={(value) => setNewUser({ ...newUser, manager_id: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select manager" />
-                </SelectTrigger>
-                <SelectContent>
-                  {managers.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="department_id">Department</Label>
             <Select
               value={newUser.department_id}
               onValueChange={(value) => setNewUser({ ...newUser, department_id: value })}
             >
-              <SelectTrigger>
+              <SelectTrigger id="department_id">
                 <SelectValue placeholder="Select department" />
               </SelectTrigger>
               <SelectContent>
@@ -177,7 +184,25 @@ export const CreateUserDialogButton = ({ className = '' }: { className?: string 
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={handleCreateUser} className="w-full">
+          {newUser.role === 'employee' ? (
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="manager_id">Manager</Label>
+              <Select
+                value={newUser.manager_id}
+                onValueChange={(value) => setNewUser({ ...newUser, manager_id: value })}
+              >
+                <SelectTrigger id="manager_id">
+                  <SelectValue placeholder="Select manager" />
+                </SelectTrigger>
+                <SelectContent>
+                  {managers.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+          <Button onClick={handleCreateUser} className="sm:col-span-2">
             Create User
           </Button>
         </div>
@@ -188,11 +213,12 @@ export const CreateUserDialogButton = ({ className = '' }: { className?: string 
 
 const USER_TABLE_COLGROUP = (
   <colgroup>
-    <col className="w-[18%]" />
-    <col className="w-[22%]" />
-    <col className="w-[12%]" />
     <col className="w-[16%]" />
-    <col className="w-[16%]" />
+    <col className="w-[10%]" />
+    <col className="w-[20%]" />
+    <col className="w-[10%]" />
+    <col className="w-[14%]" />
+    <col className="w-[14%]" />
     <col className="w-[16%]" />
   </colgroup>
 );
@@ -217,7 +243,8 @@ export const filterUserProfiles = (
     profile.name?.toLowerCase().includes(search)
     || profile.email?.toLowerCase().includes(search)
     || profile.role?.toLowerCase().includes(search)
-    || profile.department?.toLowerCase().includes(search),
+    || profile.department?.toLowerCase().includes(search)
+    || profile.employee_id?.toLowerCase().includes(search),
   );
 };
 
@@ -332,6 +359,7 @@ type HRUsersTabProps = {
 const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
   const [editingUser, setEditingUser] = useState(null);
   const [showEditPassword, setShowEditPassword] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<Profile | null>(null);
 
   const { data: profiles = [], isLoading } = useProfiles();
   const { data: roles = fallbackRoles.map((name, i) => ({ name, role_id: i + 1 })) } = useUserRoles();
@@ -368,7 +396,7 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
     switch (role) {
       case 'admin':      return <Badge className="bg-purple-100 text-purple-700 border-purple-300">Admin</Badge>;
       case 'manager':    return <Badge className="bg-amber-100 text-amber-700 border-amber-300">Manager</Badge>;
-      case 'gatekeeper': return <Badge className="bg-blue-100 text-blue-700 border-blue-300">Gatekeeper</Badge>;
+      case 'gatekeeper': return <Badge className="bg-orange-100 text-orange-700 border-orange-300">Gatekeeper</Badge>;
       case 'employee':   return <Badge className="bg-green-100 text-green-700 border-green-300">Employee</Badge>;
       case 'guest':      return <Badge className="bg-orange-100 text-orange-700 border-orange-300">Guest</Badge>;
       default:           return <Badge variant="secondary">{role}</Badge>;
@@ -381,29 +409,32 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
         id: editingUser.id,
         name: editingUser.name,
         email: editingUser.email,
+        employee_id: editingUser.employee_id?.trim() || null,
         ...(editingUser.password ? { password: editingUser.password } : {}),
         role: editingUser.role,
-        department_id: editingUser.department_id || undefined,
+        department_id: editingUser.department_id || null,
         manager_id:
-          editingUser.role === 'employee' && editingUser.manager_id
-            ? editingUser.manager_id
-            : undefined,
+          editingUser.role === 'employee' ? editingUser.manager_id || null : null,
       });
       setEditingUser(null);
       toast({ title: 'User Updated', description: 'User has been updated successfully' });
-    } catch {
-      toast({ title: 'Error', description: 'Failed to update user', variant: 'destructive' });
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: (err as Error)?.message || 'Failed to update user',
+        variant: 'destructive',
+      });
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
-    if (window.confirm('Are you sure you want to delete this user?')) {
-      try {
-        await deleteUserMutation.mutateAsync(userId);
-        toast({ title: 'User Deleted', description: 'User has been deleted successfully' });
-      } catch {
-        toast({ title: 'Error', description: 'Failed to delete user', variant: 'destructive' });
-      }
+  const handleConfirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    try {
+      await deleteUserMutation.mutateAsync(userToDelete.id);
+      toast({ title: 'User Deleted', description: `${userToDelete.name} has been deleted successfully` });
+      setUserToDelete(null);
+    } catch {
+      toast({ title: 'Error', description: 'Failed to delete user', variant: 'destructive' });
     }
   };
 
@@ -422,8 +453,9 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
               <table className="w-full table-fixed border-collapse text-sm">
                 {USER_TABLE_COLGROUP}
                 <thead className="sticky top-0 z-10">
-                  <tr className="bg-gradient-to-r from-orange-400 to-orange-500">
+                  <tr className="bg-gradient-to-r from-orange-500 to-rose-500">
                     <th className="h-11 px-4 text-left align-middle font-medium text-white">Name</th>
+                    <th className="h-11 px-4 text-left align-middle font-medium text-white">Employee ID</th>
                     <th className="h-11 px-4 text-left align-middle font-medium text-white">Email</th>
                     <th className="h-11 px-4 text-left align-middle font-medium text-white">Role</th>
                     <th className="h-11 px-4 text-left align-middle font-medium text-white">Department</th>
@@ -440,6 +472,7 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
                           <span className="font-medium">{profile.name}</span>
                         </div>
                       </td>
+                      <td className="px-4 py-4 align-middle">{profile.employee_id || '—'}</td>
                       <td className="px-4 py-4 align-middle">{profile.email}</td>
                       <td className="px-4 py-4 align-middle">{getRoleBadge(profile.role)}</td>
                       <td className="px-4 py-4 align-middle">{profile.department || 'N/A'}</td>
@@ -453,7 +486,12 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
                             variant="outline"
                             onClick={() => {
                               setShowEditPassword(false);
-                              setEditingUser({ ...profile, department_id: profile.department_id ?? '', password: '' });
+                              setEditingUser({
+                                ...profile,
+                                department_id: profile.department_id ?? '',
+                                employee_id: profile.employee_id ?? '',
+                                password: '',
+                              });
                             }}
                             className="h-8 w-8 rounded-lg p-0"
                           >
@@ -462,7 +500,7 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
                           <Button
                             size="sm"
                             variant="destructive"
-                            onClick={() => handleDeleteUser(profile.id)}
+                            onClick={() => setUserToDelete(profile)}
                             className="h-8 w-8 rounded-lg p-0"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -478,15 +516,52 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
         </CardContent>
       </Card>
 
+      <AlertDialog
+        open={Boolean(userToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deleteUserMutation.isPending) setUserToDelete(null);
+        }}
+      >
+        <AlertDialogContent className="sm:rounded-xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-orange-900">Delete user?</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-600">
+              Are you sure you want to delete{' '}
+              <span className="font-semibold text-gray-800">{userToDelete?.name}</span>
+              {userToDelete?.email ? (
+                <>
+                  {' '}
+                  (<span className="text-gray-700">{userToDelete.email}</span>)
+                </>
+              ) : null}
+              ? This will soft-delete the user and hide them from active lists.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteUserMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600"
+              disabled={deleteUserMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleConfirmDeleteUser();
+              }}
+            >
+              {deleteUserMutation.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Edit User Modal */}
       <Dialog open={!!editingUser} onOpenChange={() => { setEditingUser(null); setShowEditPassword(false); }}>
-        <DialogContent>
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
           </DialogHeader>
           {editingUser && (
-            <div className="space-y-4">
-              <div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
                 <Label htmlFor="edit-name">Name</Label>
                 <Input
                   id="edit-name"
@@ -494,17 +569,31 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
                   onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
                 />
               </div>
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="edit-email">Email</Label>
                 <Input
                   id="edit-email"
                   type="email"
                   value={editingUser.email}
                   onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                  autoComplete="off"
                 />
               </div>
-              <div>
-                <Label htmlFor="edit-password">New Password <span className="text-gray-400 text-xs font-normal">(leave blank to keep current)</span></Label>
+              <div className="space-y-2">
+                <Label htmlFor="edit-employee-id">Employee ID</Label>
+                <Input
+                  id="edit-employee-id"
+                  value={editingUser.employee_id ?? ''}
+                  onChange={(e) => setEditingUser({ ...editingUser, employee_id: e.target.value })}
+                  placeholder="e.g. EMP-1024"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-password">
+                  New Password{' '}
+                  <span className="text-xs font-normal text-gray-400">(leave blank to keep current)</span>
+                </Label>
                 <div className="relative">
                   <Input
                     id="edit-password"
@@ -513,6 +602,7 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
                     onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
                     placeholder="Enter new password"
                     className="pr-10"
+                    autoComplete="new-password"
                   />
                   <button
                     type="button"
@@ -523,7 +613,7 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
                   </button>
                 </div>
               </div>
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="edit-role">Role</Label>
                 <Select
                   value={editingUser.role}
@@ -531,7 +621,7 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
                     setEditingUser({ ...editingUser, role: value, manager_id: undefined })
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="edit-role">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -543,31 +633,13 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
                   </SelectContent>
                 </Select>
               </div>
-              {editingUser.role === 'employee' && (
-                <div>
-                  <Label htmlFor="edit-manager">Manager</Label>
-                  <Select
-                    value={editingUser.manager_id || ''}
-                    onValueChange={(value) => setEditingUser({ ...editingUser, manager_id: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select manager" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {managers.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="edit-department">Department</Label>
                 <Select
                   value={editingUser.department_id || ''}
                   onValueChange={(value) => setEditingUser({ ...editingUser, department_id: value })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="edit-department">
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
                   <SelectContent>
@@ -579,7 +651,25 @@ const HRUsersTab = ({ searchTerm, roleFilter }: HRUsersTabProps) => {
                   </SelectContent>
                 </Select>
               </div>
-              <Button onClick={handleUpdateUser} className="w-full">
+              {editingUser.role === 'employee' ? (
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="edit-manager">Manager</Label>
+                  <Select
+                    value={editingUser.manager_id || ''}
+                    onValueChange={(value) => setEditingUser({ ...editingUser, manager_id: value })}
+                  >
+                    <SelectTrigger id="edit-manager">
+                      <SelectValue placeholder="Select manager" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {managers.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+              <Button onClick={handleUpdateUser} className="sm:col-span-2">
                 Update User
               </Button>
             </div>

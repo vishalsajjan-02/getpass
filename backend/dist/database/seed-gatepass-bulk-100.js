@@ -29,13 +29,13 @@ const run = async () => {
     try {
         const lookup = await client.query(`
       SELECT
-        (SELECT id FROM users WHERE email = 'employee@company.com') AS emp_id,
-        (SELECT id FROM users WHERE email = 'manager@company.com') AS mgr_id,
-        (SELECT id FROM users WHERE email = 'admin@company.com') AS admin_id,
-        (SELECT id FROM users WHERE email = 'gatekeeper@company.com') AS gate_id,
-        (SELECT id FROM gatepass_reasons WHERE LOWER(name) = 'lunch') AS lunch_id,
-        (SELECT id FROM gatepass_reasons WHERE LOWER(name) = 'out') AS out_id,
-        (SELECT id FROM gatepass_reasons WHERE LOWER(name) = 'other') AS other_id
+        (SELECT id FROM users WHERE email = 'emp001@company.com' AND deleted_at IS NULL) AS emp_id,
+        (SELECT id FROM users WHERE email = 'manager.software-r-d@company.com' AND deleted_at IS NULL) AS mgr_id,
+        (SELECT id FROM users WHERE email = 'admin@company.com' AND deleted_at IS NULL) AS admin_id,
+        (SELECT id FROM users WHERE email = 'gatekeeper@company.com' AND deleted_at IS NULL) AS gate_id,
+        (SELECT id FROM gatepass_reasons WHERE LOWER(name) = 'lunch' AND deleted_at IS NULL) AS lunch_id,
+        (SELECT id FROM gatepass_reasons WHERE LOWER(name) = 'out' AND deleted_at IS NULL) AS out_id,
+        (SELECT id FROM gatepass_reasons WHERE LOWER(name) = 'other' AND deleted_at IS NULL) AS other_id
     `);
         const row = lookup.rows[0];
         if (!row?.emp_id || !row.admin_id || !row.mgr_id || !row.gate_id) {

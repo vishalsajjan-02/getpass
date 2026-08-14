@@ -5,6 +5,7 @@ export const getGatepassReasons = async (): Promise<GatepassReason[]> => {
   const result = await getDb().query(
     `SELECT id, name
      FROM gatepass_reasons
+     WHERE deleted_at IS NULL
      ORDER BY CASE LOWER(name)
        WHEN 'lunch' THEN 1
        WHEN 'out' THEN 2

@@ -113,7 +113,7 @@ const BulkImportUsersDialog: React.FC<BulkImportUsersDialogProps> = ({ open, onO
             <DialogHeader className="space-y-0 text-left">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100">
-                  <FileSpreadsheet className="h-5 w-5 text-orange-600" />
+                  <FileSpreadsheet className="h-5 w-5 text-blue-600" />
                 </div>
                 <DialogTitle className="text-xl font-semibold text-gray-900">Bulk Upload Users</DialogTitle>
               </div>
@@ -149,12 +149,15 @@ const BulkImportUsersDialog: React.FC<BulkImportUsersDialogProps> = ({ open, onO
               )}
             >
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-orange-100">
-                <UploadCloud className="h-8 w-8 text-orange-500" />
+                <UploadCloud className="h-8 w-8 text-blue-500" />
               </div>
-              <p className="text-center text-base font-semibold text-orange-600">
+              <p className="text-center text-base font-semibold text-blue-600">
                 Click here or drag & drop your file
               </p>
-              <p className="mt-1 text-center text-sm text-orange-500/90">CSV files</p>
+              <p className="mt-1 text-center text-sm text-blue-500/90">CSV files</p>
+              <p className="mt-2 max-w-sm text-center text-xs text-gray-500">
+                Include optional <span className="font-medium">leave_balance</span> column (e.g. 14 or 10.5)
+              </p>
               {selectedFile && (
                 <p className="mt-3 max-w-full truncate text-center text-sm font-medium text-gray-700">
                   {selectedFile.name}

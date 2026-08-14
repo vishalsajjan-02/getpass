@@ -7,9 +7,13 @@ export type BulkImportUserRow = {
   role: 'admin' | 'manager' | 'gatekeeper' | 'employee' | 'guest';
   department?: string;
   manager_email?: string;
+  employee_id?: string;
+  leave_balance?: number;
 };
 
-const CSV_HEADERS = ['name', 'email', 'password', 'role', 'department', 'manager_email'] as const;
+const REQUIRED_CSV_HEADERS = ['name', 'email', 'password', 'role', 'department', 'manager_email'] as const;
+const OPTIONAL_CSV_HEADERS = ['employee_id', 'leave_balance'] as const;
+const CSV_HEADERS = [...REQUIRED_CSV_HEADERS, ...OPTIONAL_CSV_HEADERS] as const;
 
 const escapeCsv = (value: string): string => `"${value.replace(/"/g, '""')}"`;
 
@@ -27,14 +31,12 @@ const parseCsvLine = (line: string): string[] => {
       } else {
         inQuotes = !inQuotes;
       }
-      continue;
-    }
-    if (char === ',' && !inQuotes) {
+    } else if (char === ',' && !inQuotes) {
       values.push(current.trim());
       current = '';
-      continue;
+    } else {
+      current += char;
     }
-    current += char;
   }
 
   values.push(current.trim());
@@ -49,19 +51,29 @@ const normalizeRole = (value: string): BulkImportUserRow['role'] | null => {
   return null;
 };
 
+const parseLeaveBalanceCell = (value: string | undefined, rowNumber: number): number | undefined => {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid leave_balance on row ${rowNumber}`);
+  }
+  return Math.round(parsed * 100) / 100;
+};
+
 export const parseUsersCsv = (text: string): BulkImportUserRow[] => {
   const lines = text.trim().split(/\r?\n/).filter((line) => line.trim().length > 0);
   if (lines.length < 2) {
     throw new Error('CSV must include a header row and at least one user row.');
   }
 
-  const headers = parseCsvLine(lines[0]).map((header) => header.toLowerCase());
-  const missing = CSV_HEADERS.filter((header) => !headers.includes(header));
+  const headers = parseCsvLine(lines[0]).map((header) => header.toLowerCase().trim());
+  const missing = REQUIRED_CSV_HEADERS.filter((header) => !headers.includes(header));
   if (missing.length > 0) {
     throw new Error(`Missing required columns: ${missing.join(', ')}`);
   }
 
-  const indexFor = (header: typeof CSV_HEADERS[number]) => headers.indexOf(header);
+  const indexFor = (header: (typeof CSV_HEADERS)[number]) => headers.indexOf(header);
 
   return lines.slice(1).map((line, lineIndex) => {
     const cells = parseCsvLine(line);
@@ -70,6 +82,15 @@ export const parseUsersCsv = (text: string): BulkImportUserRow[] => {
       throw new Error(`Invalid role on row ${lineIndex + 2}`);
     }
 
+    const leaveBalanceIndex = indexFor('leave_balance');
+    const leave_balance =
+      leaveBalanceIndex >= 0
+        ? parseLeaveBalanceCell(cells[leaveBalanceIndex], lineIndex + 2)
+        : undefined;
+    const employeeIdIndex = indexFor('employee_id');
+    const employee_id =
+      employeeIdIndex >= 0 ? cells[employeeIdIndex]?.trim() || undefined : undefined;
+
     return {
       name: cells[indexFor('name')] ?? '',
       email: cells[indexFor('email')] ?? '',
@@ -77,6 +98,8 @@ export const parseUsersCsv = (text: string): BulkImportUserRow[] => {
       role,
       department: cells[indexFor('department')] || undefined,
       manager_email: cells[indexFor('manager_email')] || undefined,
+      employee_id,
+      leave_balance,
     };
   });
 };
@@ -87,10 +110,15 @@ export const exportUsersCsv = (
 ): void => {
   const rows = users.map((user) => ({
     Name: user.name,
+    'Employee ID': user.employee_id || '—',
     Email: user.email,
     Role: user.role,
     Department: user.department || 'N/A',
     Manager: user.role === 'employee' ? resolveManagerName(user.manager_id) : '—',
+    'Leave Balance':
+      typeof user.leave_balance === 'number'
+        ? String(user.leave_balance)
+        : '—',
   }));
 
   if (rows.length === 0) return;
@@ -112,8 +140,8 @@ export const exportUsersCsv = (
 export const downloadUsersImportTemplate = (): void => {
   const csv = [
     CSV_HEADERS.join(','),
-    'Ram Kumar,ram.kumar@company.com,Emp@123,employee,Software R&D,manager.software@company.com',
-    'Priya Deshmukh,priya.deshmukh@company.com,Manager@123,manager,QA,',
+    'Ram Kumar,ram.kumar@company.com,Emp@123,employee,Software R&D,manager.software@company.com,EMP-1001,14',
+    'Priya Deshmukh,priya.deshmukh@company.com,Manager@123,manager,QA,,MGR-2001,10.5',
   ].join('\n');
 
   const blob = new Blob([csv], { type: 'text/csv' });

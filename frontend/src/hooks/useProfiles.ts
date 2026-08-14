@@ -10,6 +10,12 @@ export interface Profile {
   department?: string;
   department_id?: string;
   manager_id?: string;
+  employee_id?: string | null;
+  leave_balance?: number;
+  can_self_punch?: boolean;
+  has_face?: boolean;
+  face_image_url?: string | null;
+  face_registered_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -33,9 +39,10 @@ export const useProfiles = () => {
   });
 };
 
-export const useGatepassStats = () => {
+export const useGatepassStats = (options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: ['gatepass-stats'],
     queryFn: () => api.get<GatepassStats>('/gatepasses/stats'),
+    enabled: options?.enabled !== false,
   });
 };

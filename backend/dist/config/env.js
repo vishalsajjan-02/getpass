@@ -21,5 +21,7 @@ exports.env = {
     DATABASE_URL: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/gatepass_nexus',
     TIME_FOR_LUNCH: process.env.timeforlunch || '30min',
     TIME_FOR_LUNCH_MINUTES: parseDurationMinutes(process.env.timeforlunch, 30),
+    FACE_SERVICE_URL: process.env.FACE_SERVICE_URL || 'http://127.0.0.1:8091',
+    FACE_MATCH_THRESHOLD: parseFloat(process.env.FACE_MATCH_THRESHOLD || '0.35'),
 };
 //# sourceMappingURL=env.js.map

@@ -6,6 +6,15 @@ import type {
 import { createUser } from './create-user.service';
 import { resolveDepartmentId, resolveManagerId } from './shared/user.shared';
 
+const parseLeaveBalance = (value: unknown): number | undefined => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = typeof value === 'number' ? value : Number(String(value).trim());
+  if (!Number.isFinite(parsed)) {
+    throw new Error('leave_balance must be a number');
+  }
+  return Math.round(parsed * 100) / 100;
+};
+
 export const bulkImportUsers = async (rows: BulkImportUserInput[]): Promise<BulkImportUsersResult> => {
   const result: BulkImportUsersResult = { created: 0, failed: 0, errors: [] };
 
@@ -33,6 +42,8 @@ export const bulkImportUsers = async (rows: BulkImportUserInput[]): Promise<Bulk
         throw new Error(`Manager not found for email: ${row.manager_email}`);
       }
 
+      const leave_balance = parseLeaveBalance(row.leave_balance);
+
       await createUser({
         name,
         email,
@@ -40,6 +51,8 @@ export const bulkImportUsers = async (rows: BulkImportUserInput[]): Promise<Bulk
         role,
         department_id: department_id ?? undefined,
         manager_id: manager_id ?? undefined,
+        employee_id: row.employee_id?.trim() || undefined,
+        leave_balance,
       });
       result.created += 1;
     } catch (err) {

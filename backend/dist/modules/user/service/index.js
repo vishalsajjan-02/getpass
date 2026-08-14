@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.bulkImportUsers = exports.deleteUser = exports.updateUser = exports.createUser = exports.getManagers = exports.getDepartments = exports.getRoles = exports.getUserById = exports.getAllUsers = void 0;
+exports.setPunchPermission = exports.bulkImportUsers = exports.deleteUser = exports.updateUser = exports.createUser = exports.getManagers = exports.getDepartments = exports.getRoles = exports.getUserById = exports.getAllUsers = void 0;
 var get_all_users_service_1 = require("./get-all-users.service");
 Object.defineProperty(exports, "getAllUsers", { enumerable: true, get: function () { return get_all_users_service_1.getAllUsers; } });
 var get_user_by_id_service_1 = require("./get-user-by-id.service");
@@ -19,4 +19,6 @@ var delete_user_service_1 = require("./delete-user.service");
 Object.defineProperty(exports, "deleteUser", { enumerable: true, get: function () { return delete_user_service_1.deleteUser; } });
 var bulk_import_users_service_1 = require("./bulk-import-users.service");
 Object.defineProperty(exports, "bulkImportUsers", { enumerable: true, get: function () { return bulk_import_users_service_1.bulkImportUsers; } });
+var set_punch_permission_service_1 = require("./set-punch-permission.service");
+Object.defineProperty(exports, "setPunchPermission", { enumerable: true, get: function () { return set_punch_permission_service_1.setPunchPermission; } });
 //# sourceMappingURL=index.js.map

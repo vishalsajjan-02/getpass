@@ -20,6 +20,39 @@ exports.schema = [
     name       TEXT        NOT NULL UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+    // ── Leave types ────────────────────────────────────────────────────────────
+    //
+    //  Master list of company leave categories (CL, SL, PL, etc.).
+    `CREATE TABLE IF NOT EXISTS leave_types (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        TEXT        NOT NULL UNIQUE,
+    is_paid     BOOLEAN     NOT NULL DEFAULT TRUE,
+    is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
+    sort_order  INTEGER     NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+    // Drop legacy leave_types columns if upgrading an older schema.
+    `ALTER TABLE leave_types DROP COLUMN IF EXISTS code CASCADE`,
+    `ALTER TABLE leave_types DROP COLUMN IF EXISTS purpose CASCADE`,
+    `DROP INDEX IF EXISTS idx_leave_types_code`,
+    // ── Company paid holidays ──────────────────────────────────────────────────
+    //
+    //  Annual company holiday calendar (fixed dates + year-specific festival dates).
+    `CREATE TABLE IF NOT EXISTS company_holidays (
+    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    name          TEXT        NOT NULL,
+    description   TEXT        NOT NULL,
+    holiday_date  DATE        NOT NULL,
+    year          INTEGER     NOT NULL,
+    is_fixed      BOOLEAN     NOT NULL DEFAULT FALSE,
+    is_paid       BOOLEAN     NOT NULL DEFAULT TRUE,
+    is_active     BOOLEAN     NOT NULL DEFAULT TRUE,
+    sort_order    INTEGER     NOT NULL DEFAULT 0,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (holiday_date, name)
+  )`,
     // ── Users ──────────────────────────────────────────────────────────────────
     `CREATE TABLE IF NOT EXISTS users (
     id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -29,8 +62,34 @@ exports.schema = [
     role_id       UUID        NOT NULL REFERENCES roles(id)       ON DELETE RESTRICT,
     department_id UUID                 REFERENCES departments(id) ON DELETE SET NULL,
     manager_id    UUID                 REFERENCES users(id)       ON DELETE SET NULL,
+    leave_balance NUMERIC(10,2) NOT NULL DEFAULT 0,
+    leave_accrued_through TEXT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+    // Existing DBs: add leave balance columns if missing.
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS leave_balance NUMERIC(10,2) NOT NULL DEFAULT 0`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS leave_accrued_through TEXT`,
+    // Employees/managers may self punch only when admin grants this.
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS can_self_punch BOOLEAN NOT NULL DEFAULT FALSE`,
+    // Registered face image (relative path under uploads/) + ArcFace embedding JSON.
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS face_image_path TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS face_embedding TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS face_registered_at TIMESTAMPTZ`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id TEXT`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_employee_id
+    ON users (employee_id) WHERE employee_id IS NOT NULL AND deleted_at IS NULL`,
+    // ── Per-user day leave marking ─────────────────────────────────────────────
+    //
+    //  Admin/manager can mark a leave type for a user on a specific date.
+    `CREATE TABLE IF NOT EXISTS user_day_leaves (
+    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id        UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date           DATE        NOT NULL,
+    leave_type_id  UUID        NOT NULL REFERENCES leave_types(id) ON DELETE RESTRICT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, date)
   )`,
     // ── Gate passes ────────────────────────────────────────────────────────────
     //
@@ -113,6 +172,32 @@ exports.schema = [
     UNIQUE(user_id, date),
     CHECK (out_time IS NULL OR in_time IS NULL OR out_time >= in_time)
   )`,
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS in_photo_path TEXT`,
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS out_photo_path TEXT`,
+    // Punch location (GPS) captured with face punch.
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS in_location TEXT`,
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS out_location TEXT`,
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS in_latitude DOUBLE PRECISION`,
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS in_longitude DOUBLE PRECISION`,
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS out_latitude DOUBLE PRECISION`,
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS out_longitude DOUBLE PRECISION`,
+    // Who performed Punch In / Out: employee's own login vs gatekeeper (desk) login.
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS in_via TEXT`,
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS out_via TEXT`,
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS in_marked_by UUID REFERENCES users(id) ON DELETE SET NULL`,
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS out_marked_by UUID REFERENCES users(id) ON DELETE SET NULL`,
+    `DO $$ BEGIN
+     ALTER TABLE user_in_out_time
+       ADD CONSTRAINT user_in_out_time_in_via_check
+       CHECK (in_via IS NULL OR in_via IN ('self', 'gatekeeper'));
+   EXCEPTION WHEN duplicate_object THEN NULL;
+   END $$`,
+    `DO $$ BEGIN
+     ALTER TABLE user_in_out_time
+       ADD CONSTRAINT user_in_out_time_out_via_check
+       CHECK (out_via IS NULL OR out_via IN ('self', 'gatekeeper'));
+   EXCEPTION WHEN duplicate_object THEN NULL;
+   END $$`,
     // ── Indexes ────────────────────────────────────────────────────────────────
     `CREATE INDEX IF NOT EXISTS idx_gatepasses_user_id
     ON gatepasses(user_id)`,
@@ -142,5 +227,50 @@ exports.schema = [
     ON user_in_out_time(date)`,
     `CREATE INDEX IF NOT EXISTS idx_user_in_out_time_user_date
     ON user_in_out_time(user_id, date DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_leave_types_active_sort
+    ON leave_types(is_active, sort_order)`,
+    `CREATE INDEX IF NOT EXISTS idx_company_holidays_date
+    ON company_holidays(holiday_date)`,
+    `CREATE INDEX IF NOT EXISTS idx_company_holidays_year
+    ON company_holidays(year)`,
+    `CREATE INDEX IF NOT EXISTS idx_company_holidays_active_date
+    ON company_holidays(is_active, holiday_date)`,
+    `CREATE INDEX IF NOT EXISTS idx_user_day_leaves_user_date
+    ON user_day_leaves(user_id, date DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_user_day_leaves_date
+    ON user_day_leaves(date)`,
+    // Soft delete: deleted_at on every table
+    `ALTER TABLE roles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+    `ALTER TABLE gatepass_reasons ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+    `ALTER TABLE departments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+    `ALTER TABLE leave_types ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+    `ALTER TABLE company_holidays ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+    `ALTER TABLE user_day_leaves ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+    `ALTER TABLE gatepasses ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+    `ALTER TABLE gatepass_approval_requests ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+    `ALTER TABLE user_in_out_time ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+    `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_active
+    ON users (email) WHERE deleted_at IS NULL`,
+    `ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_name_key`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_roles_name_active
+    ON roles (name) WHERE deleted_at IS NULL`,
+    `ALTER TABLE gatepass_reasons DROP CONSTRAINT IF EXISTS gatepass_reasons_name_key`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_gatepass_reasons_name_active
+    ON gatepass_reasons (name) WHERE deleted_at IS NULL`,
+    `ALTER TABLE departments DROP CONSTRAINT IF EXISTS departments_name_key`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_departments_name_active
+    ON departments (name) WHERE deleted_at IS NULL`,
+    `ALTER TABLE leave_types DROP CONSTRAINT IF EXISTS leave_types_name_key`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_leave_types_name_active
+    ON leave_types (name) WHERE deleted_at IS NULL`,
+    `ALTER TABLE company_holidays DROP CONSTRAINT IF EXISTS company_holidays_holiday_date_name_key`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_company_holidays_date_name_active
+    ON company_holidays (holiday_date, name) WHERE deleted_at IS NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users (deleted_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_gatepasses_deleted_at ON gatepasses (deleted_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_user_day_leaves_deleted_at ON user_day_leaves (deleted_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_user_in_out_time_deleted_at ON user_in_out_time (deleted_at)`,
 ];
 //# sourceMappingURL=schema.js.map

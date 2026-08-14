@@ -23,13 +23,13 @@ const EmployeeProfile = () => {
         <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-gray-50">
           <CardHeader>
             <CardTitle className="flex items-center space-x-2 text-gray-800">
-              <User className="w-5 h-5 text-orange-500" />
+              <User className="w-5 h-5 text-blue-500" />
               <span>Profile Picture</span>
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col items-center space-y-4">
             <Avatar className="w-32 h-32 shadow-lg">
-              <AvatarFallback className="bg-gradient-to-br from-orange-400 to-orange-500 text-white text-2xl">
+              <AvatarFallback className="bg-gradient-to-br from-orange-400 to-rose-500 text-white text-2xl">
                 {user?.name?.charAt(0) || 'U'}
               </AvatarFallback>
             </Avatar>
@@ -40,7 +40,7 @@ const EmployeeProfile = () => {
         <Card className="lg:col-span-2 shadow-xl border-0 bg-gradient-to-br from-white to-gray-50">
           <CardHeader>
             <CardTitle className="flex items-center space-x-2 text-gray-800">
-              <User className="w-5 h-5 text-orange-500" />
+              <User className="w-5 h-5 text-blue-500" />
               <span>Personal Information</span>
             </CardTitle>
           </CardHeader>
